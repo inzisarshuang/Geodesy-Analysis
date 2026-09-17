@@ -9,13 +9,13 @@ unwrapping, atmosphere correction, and time-series analysis.
 本仓库尚不是默认入口。
 
 Version 0.1.0 packages the existing baseline and filtering implementation plus
-the masking and time-series modules migrated in the next F1 step. Core imports
-require only NumPy and the installed Data Adapter; plotting, image I/O, and GNSS
-tables use explicit optional dependency groups.
+the masking and time-series modules migrated in the next F1 step. Numerical
+runtime dependencies are NumPy, SciPy, and the installed Data Adapter; plotting,
+image I/O, and GNSS tables use explicit optional dependency groups.
 
 0.1.0 版首先封装现有基线和滤波实现，随后在同一 F1 阶段迁入掩膜与时序模块。
-核心导入仅依赖 NumPy 和已安装的 Data Adapter；绘图、图像 I/O 与 GNSS 表格使用
-明确的可选依赖组。
+数值运行依赖为 NumPy、SciPy 和已安装的 Data Adapter；绘图、图像 I/O 与 GNSS
+表格使用明确的可选依赖组。
 
 MintPy and DS-InSAR are deliberately deferred until the existing processing path
 has been migrated and validated end to end.
