@@ -5,10 +5,11 @@
 - F1 transfer source commit: `560ff7080fbb5cd03161170660183d933241c23e`
 - Adapter boundary commit: `a10ec3c`
 - GAMMA installed-package transition commit: `a6e0186634b0947c777758e4b71532e1157c36cf`
+- F2 shadow-validation tool commit: `0850c17`
 - Package inventory: `/mnt/beegfs/procesados/yiluntan/GAMMA-InSAR/2-GAMMA-POST/Toolbox_InSAR/geodesy_analysis`
 - Foundation date: 2026-09-17
-- Current state: `compatible`; installed wheel accepted, representative project
-  comparison pending before `default`
+- Current state: `default`; installed wheel and Tenerife 060 representative
+  project shadow comparison accepted
 
 ## F1 transfer
 
@@ -27,5 +28,10 @@ and Adapter 0.19.0 wheel
 (`sha256:ba076687283e63896810b208a0115ef3ff22158b1d315cb0168c6d290bc4c9af`)
 were installed in `envInSAR`. Analysis 19, Adapter 71, and GAMMA 59 tests passed,
 including checks that imports resolve from `site-packages` and compatibility
-exports are object-identical. Promotion to `default` additionally requires a
-representative project product comparison.
+exports are object-identical. The representative project gate for `default`
+completed on 2026-09-17 with exact baseline, filtering, masking, and time-series
+result fingerprints. The project-local evidence is under
+`Tenerife/Ascending/LOG/migrations/F2-analysis/` and the three executions are
+recorded under `Tenerife/Ascending/LOG/ANALYSIS/ANALYSIS_F2_SHADOW_*`. The final
+comparison report SHA-256 is
+`daac38535fce5de15f686865d1089767f8b26328f76487f64587c0985cf78e48`.
