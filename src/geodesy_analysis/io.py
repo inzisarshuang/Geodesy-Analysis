@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -36,3 +37,29 @@ def atomic_output_path(path: str | Path) -> Iterator[Path]:
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise
+
+
+@contextmanager
+def atomic_output_directory(destination: Path) -> Iterator[Path]:
+    """Yield a sibling staging directory and publish it only on success."""
+
+    output = Path(destination)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if output.exists() or output.is_symlink():
+        raise FileExistsError(f"output directory already exists: {output}")
+    staging = Path(
+        tempfile.mkdtemp(
+            prefix=f".{output.name}.", suffix=".stage", dir=output.parent
+        )
+    )
+    try:
+        yield staging
+        if output.exists() or output.is_symlink():
+            raise FileExistsError(f"output directory already exists: {output}")
+        os.replace(staging, output)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+
+__all__ = ["atomic_output_directory", "atomic_output_path"]
