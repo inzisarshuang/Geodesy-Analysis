@@ -35,3 +35,21 @@ result fingerprints. The project-local evidence is under
 recorded under `Tenerife/Ascending/LOG/ANALYSIS/ANALYSIS_F2_SHADOW_*`. The final
 comparison report SHA-256 is
 `daac38535fce5de15f686865d1089767f8b26328f76487f64587c0985cf78e48`.
+
+## GAMMA baseline and interferogram workflow validation
+
+The new installed commands were validated on 2026-10-13 against the completed
+Sentinel-1 ascending RSLC stack in `Gansu_Jishishan_LT1`; PRE was not rerun. The
+three-scene stack used reference date `20231226`, VV polarization, range/azimuth
+looks `7/2`, and a 40-day SBAS limit. Both the new baseline workflow and an
+independent direct `base_calc` reference selected `20231226-20240131` with
+perpendicular baseline `-162.2996 m` and temporal baseline `36 days`.
+
+The bounded interferogram run published three non-empty MLI assets and one
+complete pair containing `.int`, `.off`, `.baseline`, `.int.flt`, `.diff.par`,
+`.sim.topo.unw`, `.tflt`, and `.cc`. The MLI, offset, DIFF parameter, and radar
+height grids all resolved to `6931 × 2095`; the expected FLOAT grid size and the
+radar-height size were both `58,081,780` bytes. A same-input rerun returned
+`skipped`. Project-local evidence, complete commands, digests, dimensions, and
+output sizes are recorded in
+`Gansu_Jishishan_LT1/LOG/ANALYSIS/GAMMA/validation/validation.json`.
