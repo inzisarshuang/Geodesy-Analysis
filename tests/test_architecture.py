@@ -17,6 +17,8 @@ class ArchitectureTests(unittest.TestCase):
                 self.assertNotIn("from lib", text)
                 self.assertNotIn("GAMMA-InSAR", text)
                 self.assertNotIn("sys.path", text)
+                self.assertNotIn("/mnt/beegfs", text)
+                self.assertNotIn("/home/yilun", text)
 
 
 if __name__ == "__main__":

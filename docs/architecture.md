@@ -20,3 +20,20 @@ Data Adapter 交换格式并由 Visualization 绘制。相干性是常规分析�
 6. Keep legacy entry points until compatibility and rollback checks pass.
 
 This repository is not yet the default implementation.
+
+## Current source layout / 当前源码结构
+
+- `common/`：跨工作流的路径限制、统一进度、命令日志和原子发布。
+- `insar/common/registered_stack.py`：只读 PRE 的正式 RSLC 栈清单。
+- `insar/baseline_selection/common/`：不绑定处理软件的基线读取与绘图。
+- `insar/baseline_selection/gamma/`：GAMMA 基线配置、计划、执行和发布。
+- `insar/interferogram_generation/gamma/`：GAMMA 干涉配置、跨阶段检查、逐对执行和发布。
+
+卫星差异在 PRE 结束前消化；进入 Analysis 后统一消费雷达坐标 RSLC。处理软件差异
+则保留在 `gamma/`、未来的 `isce/` 等独立目录，避免混用命令和参数。
+
+## Product boundaries / 产品边界
+
+Analysis 只读取 `registered_stack.json`，不扫描 PRE 文件夹猜测影像。基线阶段发布
+`baseline_manifest.json`，干涉阶段发布 `interferogram_manifest.json`。后续滤波与
+解缠只读取后一份清单，因此各阶段可以独立检查、重跑和替换。

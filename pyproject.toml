@@ -23,6 +23,7 @@ all = ["matplotlib>=3.7", "Pillow>=9", "pandas>=1.5", "openpyxl>=3.1"]
 [project.scripts]
 geodesy-analysis-gamma-baseline = "geodesy_analysis.insar.baseline_selection.gamma.cli:main"
 geodesy-analysis-baseline-plot = "geodesy_analysis.insar.baseline_selection.common.plot_cli:main"
+geodesy-analysis-gamma-interferogram = "geodesy_analysis.insar.interferogram_generation.gamma.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
