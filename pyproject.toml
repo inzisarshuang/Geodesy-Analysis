@@ -20,5 +20,12 @@ mask = ["Pillow>=9"]
 table = ["pandas>=1.5", "openpyxl>=3.1"]
 all = ["matplotlib>=3.7", "Pillow>=9", "pandas>=1.5", "openpyxl>=3.1"]
 
+[project.scripts]
+geodesy-analysis-gamma-baseline = "geodesy_analysis.insar.baseline_selection.gamma.cli:main"
+geodesy-analysis-baseline-plot = "geodesy_analysis.insar.baseline_selection.common.plot_cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.data-files]
+"share/geodesy-analysis/config_examples" = ["config_examples/*.cfg"]
