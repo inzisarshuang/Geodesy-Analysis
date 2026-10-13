@@ -183,10 +183,14 @@ git commit -m "Plan GAMMA baseline selection"
 - Create: `src/geodesy_analysis/insar/baseline_selection/gamma/publication.py`
 - Create: `src/geodesy_analysis/insar/baseline_selection/gamma/runner.py`
 - Create: `src/geodesy_analysis/insar/baseline_selection/gamma/cli.py`
+- Create: `src/geodesy_analysis/insar/baseline_selection/common/plot_config.py`
+- Create: `src/geodesy_analysis/insar/baseline_selection/common/plot_cli.py`
 - Create: `config_examples/gamma_baseline.cfg`
+- Create: `config_examples/baseline_plot.cfg`
 - Modify: `pyproject.toml`
 - Create: `tests/test_gamma_baseline_runner.py`
 - Create: `tests/test_gamma_baseline_cli.py`
+- Create: `tests/test_baseline_plot_cli.py`
 
 **Interfaces:**
 - Consumes: Task 1 command/progress/publication APIs and Task 3 `GammaBaselinePlan`.
@@ -194,6 +198,7 @@ git commit -m "Plan GAMMA baseline selection"
 - Produces: `run_gamma_baseline(plan, *, command_runner, progress_sink=print) -> BaselineRunSummary`.
 - Produces: schema-v1 `baseline_manifest.json` with stack digest, polarization, reference date, network type, network path, pair count, and provenance path.
 - Produces: console script `geodesy-analysis-gamma-baseline`.
+- Produces: `BaselinePlotCase`, `load_baseline_plot_config`, and source-neutral console script `geodesy-analysis-baseline-plot`, preserving the old script's baseline/master/orbit/output/title/DPI/figsize/y-margin/font controls.
 
 - [ ] **Step 1: Write failing runner tests**
 
@@ -215,24 +220,24 @@ Run: `/home/yilun/miniconda3/envs/envInSAR/bin/python -m unittest tests.test_gam
 
 Expected: PASS.
 
-- [ ] **Step 5: Write failing CLI and CFG-contract tests**
+- [ ] **Step 5: Write failing workflow CLI, plot CLI, and CFG-contract tests**
 
-Assert `--dry-run` JSON includes case, stack, reference date, network type, pair limits and output but creates nothing; assert operational errors return nonzero. Check the example CFG contains purpose, usage, dry-run, formal run, per-section parameter explanations, outputs, logs, completion judgment, rerun rules, and credential warning.
+Assert workflow `--dry-run` JSON includes case, stack, reference date, network type, pair limits and output but creates nothing; assert operational errors return nonzero. For the independent plot command, assert the old cfg controls, direct positional baseline input, CLI-over-CFG precedence, default output naming, and rejection of input/output paths outside the project. Check both example CFG files contain purpose, usage, formal examples and parameter explanations; check the workflow CFG also documents outputs, logs, completion judgment, rerun rules, and credential warning.
 
-- [ ] **Step 6: Implement CLI, entry point, and fully commented example CFG**
+- [ ] **Step 6: Implement both CLIs, entry points, and fully commented example CFG files**
 
-Set `GEODESY_PROGRESS_PROTOCOL=1` behavior to raw protocol and otherwise use `ConsoleProgress`, matching PRE.
+Set `GEODESY_PROGRESS_PROTOCOL=1` behavior to raw protocol and otherwise use `ConsoleProgress`, matching PRE. The baseline workflow calls the same plotting service automatically after publishing its network table; the independent plot CLI never calls GAMMA.
 
 - [ ] **Step 7: Run baseline stage tests**
 
-Run: `/home/yilun/miniconda3/envs/envInSAR/bin/python -m unittest tests.test_gamma_baseline_config tests.test_gamma_baseline_plan tests.test_gamma_baseline_runner tests.test_gamma_baseline_cli -v`
+Run: `/home/yilun/miniconda3/envs/envInSAR/bin/python -m unittest tests.test_gamma_baseline_config tests.test_gamma_baseline_plan tests.test_gamma_baseline_runner tests.test_gamma_baseline_cli tests.test_baseline_plot_cli -v`
 
 Expected: PASS.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add src/geodesy_analysis/insar/baseline_selection config_examples/gamma_baseline.cfg pyproject.toml tests/test_gamma_baseline_runner.py tests/test_gamma_baseline_cli.py
+git add src/geodesy_analysis/insar/baseline_selection config_examples/gamma_baseline.cfg config_examples/baseline_plot.cfg pyproject.toml tests/test_gamma_baseline_runner.py tests/test_gamma_baseline_cli.py tests/test_baseline_plot_cli.py
 git commit -m "Implement GAMMA baseline workflow"
 ```
 
@@ -366,7 +371,7 @@ git commit -m "Implement GAMMA interferogram execution"
 
 - [ ] **Step 1: Write failing CLI, packaging, and documentation tests**
 
-Assert dry-run JSON fields and no writes; operational error exit codes; both `pyproject.toml` entry points; example CFG documentation requirements; workflow order; and no legacy imports/runtime paths.
+Assert dry-run JSON fields and no writes; operational error exit codes; all three `pyproject.toml` entry points; example CFG documentation requirements; workflow order; and no legacy imports/runtime paths.
 
 - [ ] **Step 2: Run and verify RED**
 
@@ -388,11 +393,11 @@ Expected: all tests PASS.
 
 Run: `/home/yilun/miniconda3/envs/envInSAR/bin/python -m pip install --no-deps -e /mnt/beegfs/procesados/yiluntan/Geodesy-Analysis`
 
-Expected: editable installation succeeds and both executables resolve from `/home/yilun/miniconda3/envs/envInSAR/bin/`.
+Expected: editable installation succeeds and all three executables resolve from `/home/yilun/miniconda3/envs/envInSAR/bin/`.
 
 - [ ] **Step 6: Run installed-entry dry runs from outside the repository**
 
-Create project-local CFG files for the selected real validation case, then run both absolute executables from `/mnt/beegfs/procesados/yiluntan`. Expected: valid JSON plans, no product directories from dry-run, and paths resolve relative to the CFG project root.
+Create project-local CFG files for the selected real validation case, then run the baseline and interferogram absolute executables from `/mnt/beegfs/procesados/yiluntan`; run the independent plot command against a test network without calling GAMMA. Expected: valid JSON plans, no product directories from dry-run, a non-empty PNG from the plot command, and paths resolved relative to the CFG project root.
 
 - [ ] **Step 7: Commit**
 

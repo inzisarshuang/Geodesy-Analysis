@@ -9,10 +9,11 @@
 
 本阶段只完成：
 
-1. GAMMA DSI、SBAS、PSI 基线网络生成和基线图；
+1. GAMMA DSI、SBAS、PSI 基线网络生成和自动基线图；
 2. 按基线网络逐对生成原始干涉图、MLI、轨道基线、去平干涉图、去地形相位
    干涉图和相干性；
-3. 为后续滤波和解缠发布稳定的结果清单。
+3. 提供独立基线重绘入口，迁入旧 `baselineplot_main.py` 的 CFG 和绘图参数；
+4. 为后续滤波和解缠发布稳定的结果清单。
 
 本阶段不包含网络相干性优选、滤波、解缠、大气改正或时序反演，也不把科学
 处理放入 `Geodesy-Data-Adapter`。
@@ -37,6 +38,8 @@ src/geodesy_analysis/
 └── insar/
     ├── baseline_selection/
     │   ├── common/
+    │   │   ├── plot_config.py
+    │   │   └── plot_cli.py
     │   └── gamma/
     │       ├── cli.py
     │       ├── config.py
@@ -82,6 +85,25 @@ CFG 使用 PRE 的 `[project]`、`[defaults]` 和 `[case:name]` 结构。核心�
 - `output_dir`：基线阶段独立输出目录。
 
 参考日期直接读取 `registered_stack.json`，不允许 CFG 再填写另一个不一致的值。
+
+基线选择完成后默认自动生成 PNG。独立重绘不重新运行 `base_calc`：
+
+```bash
+geodesy-analysis-baseline-plot \
+  --config PROJECT/config/analysis/baseline_plot.cfg \
+  --case ascending
+
+geodesy-analysis-baseline-plot \
+  /absolute/path/baseline_select_SBAS \
+  --master-date 20231222 \
+  --out /absolute/path/baseline_select_SBAS.png
+```
+
+独立绘图 CFG 同样采用 `[project]`、`[defaults]` 和 `[case:name]`。它迁入旧脚本的
+`baseline`、`master_date`、`orbit`、`out`、`title`、`dpi`、`figsize`、
+`y_top_extra`、`y_bottom_extra` 和 `font_family` 能力。命令行显式参数覆盖 CFG；
+所有输入和输出仍限制在项目根目录内。绘图属于来源无关的分析诊断，因此入口名
+不含 `gamma`。
 
 ### 4.2 干涉图生成
 
@@ -207,6 +229,7 @@ PROJECT/LOG/ANALYSIS/GAMMA/INTERFEROGRAM/<case>/
 - CFG 合并顺序、未知参数、越界路径、非法 case 和阈值；
 - 注册栈状态、后端、网格类型、极化完整性和缺失文件；
 - 三类 `base_calc` 命令及旧脚本等价的网络表解析；
+- 基线选择自动出图，以及独立绘图入口的旧 CFG 参数、命令行覆盖和默认命名；
 - Sentinel-1 与其他传感器的频谱滤波解析；
 - MLI 去重、逐对命令顺序、错误停止、失败日志保留和原子发布；
 - 相同输入跳过、不同输入冲突；
@@ -219,10 +242,11 @@ PROJECT/LOG/ANALYSIS/GAMMA/INTERFEROGRAM/<case>/
 
 ## 9. 完成标准
 
-1. 两个安装后命令可从任意目录使用绝对 CFG 路径运行；
+1. 三个安装后命令可从任意目录使用绝对 CFG 路径运行；
 2. CFG 示例包含功能、调用方法、运行示例、参数解释、易错项、结果、日志和完成
    判断；
-3. 基线阶段从 PRE 清单生成确定性网络表和基线图；
+3. 基线阶段从 PRE 清单生成确定性网络表和基线图，独立入口可在不重算基线的
+   情况下重新绘图；
 4. 干涉阶段按清单生成全部核心产物，并发布可供滤波阶段读取的清单；
 5. 单元测试全部通过，`envInSAR` 安装入口通过，少量真实干涉对完成对照；
 6. 不修改 PRE、Adapter 或旧生产脚本，也不声称滤波和解缠已经完成。
