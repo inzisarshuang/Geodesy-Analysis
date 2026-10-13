@@ -1,0 +1,2 @@
+"""GAMMA-backed interferogram generation."""
+
