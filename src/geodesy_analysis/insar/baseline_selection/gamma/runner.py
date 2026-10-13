@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,6 +37,53 @@ def _event(sink: Callable[[str], None], **values: object) -> None:
     sink(emit_progress(task=_TASK, **values))
 
 
+def _published_asset(output: Path, value: object, label: str) -> Path:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"baseline manifest {label} path is required")
+    relative = Path(value)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ValueError(f"baseline manifest {label} path is unsafe")
+    target = (output / relative).resolve()
+    try:
+        target.relative_to(output.resolve())
+    except ValueError as error:
+        raise ValueError(f"baseline manifest {label} leaves output directory") from error
+    if not target.is_file() or target.stat().st_size == 0:
+        raise ValueError(f"complete baseline output is missing {label}: {target}")
+    return target
+
+
+def _nonempty_lines(path: Path) -> tuple[str, ...]:
+    return tuple(
+        line.strip()
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    )
+
+
+def _next_failed_log_directory(active: Path) -> Path:
+    index = 1
+    while True:
+        candidate = active.with_name(f"{active.name}.failed-logs-{index}")
+        if not candidate.exists():
+            return candidate
+        index += 1
+
+
+def _begin_logs(active: Path) -> None:
+    active.parent.mkdir(parents=True, exist_ok=True)
+    if active.exists():
+        os.replace(active, _next_failed_log_directory(active))
+    active.mkdir()
+
+
+def _preserve_failed_logs(active: Path) -> Path:
+    failed = _next_failed_log_directory(active)
+    if active.exists():
+        os.replace(active, failed)
+    return failed
+
+
 def _read_existing(plan: GammaBaselinePlan, signature: str) -> BaselineRunSummary | None:
     output = plan.case.output_dir
     if not output.exists():
@@ -45,20 +93,47 @@ def _read_existing(plan: GammaBaselinePlan, signature: str) -> BaselineRunSummar
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+        if not isinstance(manifest, dict) or not isinstance(provenance, dict):
+            raise ValueError("baseline manifest and provenance must be JSON objects")
         if provenance.get("input_signature") != signature:
             raise FileExistsError(
                 f"baseline output was produced from different inputs: {output}"
             )
-        for key in ("network_path", "image_pairs_path", "provenance_path"):
-            path = output / manifest[key]
-            if not path.is_file() or path.stat().st_size == 0:
-                raise ValueError(f"complete baseline output is missing {key}: {path}")
-        images = output / "images"
-        if not images.is_file() or images.stat().st_size == 0:
-            raise ValueError(f"complete baseline output is missing images: {images}")
+        if manifest.get("schema_version") != 1 or manifest.get("status") != "complete":
+            raise ValueError("baseline manifest is not complete schema version 1")
+        if manifest.get("stack_digest") != plan.stack.source_digest:
+            raise ValueError("baseline manifest stack digest is inconsistent")
+        if manifest.get("reference_date") != plan.stack.reference_date:
+            raise ValueError("baseline manifest reference date is inconsistent")
+        if manifest.get("polarization") != plan.case.polarization:
+            raise ValueError("baseline manifest polarization is inconsistent")
+        if manifest.get("network_type") != plan.case.network_type:
+            raise ValueError("baseline manifest network type is inconsistent")
+        network = _published_asset(output, manifest.get("network_path"), "network")
+        image_pairs = _published_asset(
+            output, manifest.get("image_pairs_path"), "image pairs"
+        )
+        _published_asset(output, manifest.get("provenance_path"), "provenance")
+        images = _published_asset(output, "images", "images")
+        pair_count = manifest.get("pair_count")
+        if not isinstance(pair_count, int) or isinstance(pair_count, bool) or pair_count <= 0:
+            raise ValueError("baseline manifest pair_count must be a positive integer")
+        if len(_nonempty_lines(network)) != pair_count:
+            raise ValueError("baseline manifest pair_count does not match network")
+        if len(_nonempty_lines(image_pairs)) != pair_count:
+            raise ValueError("baseline manifest pair_count does not match image pairs")
+        if tuple(
+            "-".join(line.split()[:2]) for line in _nonempty_lines(network)
+        ) != _nonempty_lines(image_pairs):
+            raise ValueError("baseline network and image-pair inventories disagree")
+        if _nonempty_lines(images) != plan.stack.dates:
+            raise ValueError("baseline images inventory is inconsistent")
+        plot_path = manifest.get("plot_path")
+        if plot_path is not None:
+            _published_asset(output, plot_path, "baseline plot")
         return BaselineRunSummary(
             status="skipped",
-            pair_count=int(manifest["pair_count"]),
+            pair_count=pair_count,
             output_dir=output,
             warnings=tuple(manifest.get("warnings", ())),
         )
@@ -96,7 +171,7 @@ def run_gamma_baseline(
         / "LOG/ANALYSIS/GAMMA/BASELINE"
         / plan.case.name
     )
-    log_dir.mkdir(parents=True, exist_ok=True)
+    _begin_logs(log_dir)
     stdout_log = log_dir / "base_calc.stdout.log"
     stderr_log = log_dir / "base_calc.stderr.log"
     delegate = command_runner or SubprocessCommandRunner()
@@ -239,13 +314,14 @@ def run_gamma_baseline(
             warnings=tuple(warnings),
         )
     except BaseException:
+        failed_logs = _preserve_failed_logs(log_dir)
         _event(
             progress_sink,
             event="batch_finished",
             status="failed",
             total=3,
             stage="failed",
-            failure_logs=str(log_dir),
+            failure_logs=str(failed_logs),
         )
         raise
 

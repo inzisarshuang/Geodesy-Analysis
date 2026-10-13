@@ -9,6 +9,14 @@ from pathlib import Path
 from .models import GammaInterferogramPlan
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        while block := stream.read(1024 * 1024):
+            digest.update(block)
+    return digest.hexdigest()
+
+
 def ensure_nonempty(path: Path, label: str) -> Path:
     """Require one command output to exist and contain data."""
 
@@ -63,7 +71,7 @@ def interferogram_input_signature(plan: GammaInterferogramPlan) -> str:
         "polarization": case.polarization,
         "radar_height": {
             "path": str(case.radar_height),
-            "sha256": hashlib.sha256(case.radar_height.read_bytes()).hexdigest(),
+            "sha256": _sha256_file(case.radar_height),
         },
         "range_looks": case.range_looks,
         "reference_date": plan.stack.reference_date,
@@ -74,4 +82,3 @@ def interferogram_input_signature(plan: GammaInterferogramPlan) -> str:
 
 
 __all__ = ["ensure_nonempty", "gamma_parameter", "interferogram_input_signature"]
-

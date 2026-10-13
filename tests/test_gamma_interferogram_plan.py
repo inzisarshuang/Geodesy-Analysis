@@ -215,6 +215,17 @@ class GammaInterferogramPlanTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message):
                     build_gamma_interferogram_plan(self._case(root, stack, baseline))
 
+    def test_rejects_manifest_pair_count_that_disagrees_with_network(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stack, digest = self._stack(root)
+            baseline = self._baseline(root, digest)
+            payload = json.loads(baseline.read_text(encoding="utf-8"))
+            payload["pair_count"] = 99
+            baseline.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "pair_count"):
+                build_gamma_interferogram_plan(self._case(root, stack, baseline))
+
     def test_baseline_reader_rejects_manifest_path_traversal(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

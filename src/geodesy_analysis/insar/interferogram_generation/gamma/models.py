@@ -45,6 +45,7 @@ class BaselineManifest:
     reference_date: str
     network_type: str
     network_path: Path
+    pair_count: int
 
 
 @dataclass(frozen=True)
@@ -77,4 +78,3 @@ __all__ = [
     "GammaInterferogramPlan",
     "InterferogramPair",
 ]
-

@@ -85,6 +85,7 @@ def read_baseline_manifest(
         reference_date=reference_date,
         network_type=network_type,
         network_path=network_path,
+        pair_count=pair_count,
     )
 
 
@@ -167,6 +168,11 @@ def build_gamma_interferogram_plan(
         raise ValueError(f"radar height is empty: {radar_height}")
 
     pairs = _network_pairs(baseline.network_path, stack.dates)
+    if len(pairs) != baseline.pair_count:
+        raise ValueError(
+            "baseline manifest pair_count does not match its network table: "
+            f"{baseline.pair_count} != {len(pairs)}"
+        )
     flags = _filter_flags(stack.sensor, case.spectral_filter)
     return GammaInterferogramPlan(
         case=case,

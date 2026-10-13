@@ -325,6 +325,26 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
                     progress_sink=lambda _: None,
                 )
 
+    def test_existing_manifest_with_wrong_pair_identity_conflicts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = self._plan(root)
+            run_gamma_interferograms(
+                plan,
+                command_runner=_FakeGamma(),
+                progress_sink=lambda _: None,
+            )
+            manifest_path = plan.case.output_dir / "interferogram_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["pairs"][0]["pair"] = "20000101-20000102"
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(FileExistsError, "incomplete or invalid"):
+                run_gamma_interferograms(
+                    plan,
+                    command_runner=_FakeGamma(),
+                    progress_sink=lambda _: None,
+                )
+
     def test_quicklook_failure_is_warning_and_scientific_products_publish(self) -> None:
         def broken_quicklook(**_):
             raise RuntimeError("renderer unavailable")

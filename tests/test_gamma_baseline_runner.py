@@ -163,9 +163,31 @@ class GammaBaselineRunnerTests(unittest.TestCase):
                     plotter=self._plotter,
                 )
             self.assertFalse(plan.case.output_dir.exists())
-            self.assertTrue(
-                (root / "LOG/ANALYSIS/GAMMA/BASELINE/ascending/base_calc.stdout.log").is_file()
+            failures = list(
+                (root / "LOG/ANALYSIS/GAMMA/BASELINE").glob(
+                    "ascending.failed-logs-*"
+                )
             )
+            self.assertEqual(len(failures), 1)
+            self.assertTrue((failures[0] / "base_calc.stdout.log").is_file())
+
+    def test_existing_manifest_pair_count_must_match_network(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = self._plan(root)
+            run_gamma_baseline(
+                plan, command_runner=_FakeBaseCalc(), plotter=self._plotter
+            )
+            manifest_path = plan.case.output_dir / "baseline_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["pair_count"] = 99
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(FileExistsError, "incomplete or invalid"):
+                run_gamma_baseline(
+                    plan,
+                    command_runner=_FakeBaseCalc(),
+                    plotter=self._plotter,
+                )
 
     def test_matching_output_skips_but_changed_stack_conflicts(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

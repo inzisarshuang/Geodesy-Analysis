@@ -58,6 +58,8 @@ def _read_existing(
             (output / "interferogram_manifest.json").read_text(encoding="utf-8")
         )
         provenance = json.loads((output / "provenance.json").read_text(encoding="utf-8"))
+        if not isinstance(manifest, dict) or not isinstance(provenance, dict):
+            raise ValueError("interferogram manifest and provenance must be JSON objects")
         if provenance.get("input_signature") != signature:
             raise FileExistsError(
                 f"interferogram output was produced from different inputs: {output}"
@@ -66,6 +68,20 @@ def _read_existing(
             raise ValueError("interferogram manifest is not complete schema version 1")
         if manifest.get("stack_digest") != plan.stack.source_digest:
             raise ValueError("interferogram manifest stack digest is inconsistent")
+        if manifest.get("polarization") != plan.case.polarization:
+            raise ValueError("interferogram manifest polarization is inconsistent")
+        if manifest.get("reference_date") != plan.stack.reference_date:
+            raise ValueError("interferogram manifest reference date is inconsistent")
+        if manifest.get("looks") != {
+            "azimuth": plan.case.azimuth_looks,
+            "range": plan.case.range_looks,
+        }:
+            raise ValueError("interferogram manifest looks are inconsistent")
+        if manifest.get("filter_flags") != {
+            "azimuth": plan.spectral_filter_azimuth,
+            "range": plan.spectral_filter_range,
+        }:
+            raise ValueError("interferogram manifest filter flags are inconsistent")
         _published_asset(output, manifest.get("average_mli_path"), "average MLI")
         raw_mli = manifest.get("mli_assets")
         raw_pairs = manifest.get("pairs")
@@ -73,14 +89,30 @@ def _read_existing(
             raise ValueError("interferogram manifest has an incomplete MLI inventory")
         if not isinstance(raw_pairs, list) or len(raw_pairs) != len(plan.pairs):
             raise ValueError("interferogram manifest has an incomplete pair inventory")
-        for item in raw_mli:
+        for expected_date, item in zip(plan.stack.dates, raw_mli):
             if not isinstance(item, dict):
                 raise ValueError("interferogram manifest MLI item must be an object")
+            if item.get("date") != expected_date:
+                raise ValueError("interferogram manifest MLI date inventory is inconsistent")
             _published_asset(output, item.get("data_path"), "MLI")
             _published_asset(output, item.get("parameter_path"), "MLI parameters")
-        for item in raw_pairs:
+        for expected_pair, item in zip(plan.pairs, raw_pairs):
             if not isinstance(item, dict) or not isinstance(item.get("products"), dict):
                 raise ValueError("interferogram manifest pair item is invalid")
+            if item.get("pair") != expected_pair.name:
+                raise ValueError("interferogram manifest pair inventory is inconsistent")
+            required_products = {
+                "baseline",
+                "coherence",
+                "differential_interferogram",
+                "differential_parameters",
+                "flattened_interferogram",
+                "interferogram",
+                "offset",
+                "simulated_topographic_phase",
+            }
+            if set(item["products"]) != required_products:
+                raise ValueError("interferogram manifest pair products are incomplete")
             for name, path in item["products"].items():
                 _published_asset(output, path, f"pair product {name}")
         return InterferogramRunSummary(
