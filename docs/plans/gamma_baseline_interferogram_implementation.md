@@ -314,7 +314,7 @@ git commit -m "Plan GAMMA interferogram generation"
 
 - [ ] **Step 1: Write failing execution-order tests**
 
-Use a fake runner that creates expected outputs and parameter files. Assert each acquisition receives one `multi_look`, `ave_image` runs once, and every pair receives the exact ordered core sequence from the design with resolved filter flags and configured `create_offset` stdin.
+Use a fake runner that creates expected outputs and parameter files. Assert each acquisition receives one `multi_look`, `ave_image` runs once, and every pair receives the exact ordered core sequence from the design, including the required `create_diff_par`, with resolved filter flags and configured `create_offset` stdin.
 
 - [ ] **Step 2: Run and verify RED**
 

@@ -168,7 +168,8 @@ BASELINE/
 2. 每个日期只生成一次 MLI，不在不同干涉对之间重复计算；
 3. 按网络表顺序逐对执行：
    `create_offset → SLC_intf → base_init → base_perp → ph_slope_base →`
-   `phase_sim_orb → sub_phase → cc_wave`；
+   `create_diff_par → phase_sim_orb → sub_phase → cc_wave`；其中
+   `create_diff_par` 生成 `sub_phase` 明确要求的 DIFF/GEO 参数文件；
 4. 全部 MLI 完成后生成 `ave_mli`；
 5. 快视图属于辅助产物。快视图失败记录 warning，但不删除已经验证通过的科学
    产物；核心 GAMMA 命令失败则本阶段失败；
@@ -185,6 +186,7 @@ INTERFEROGRAM/
 │       ├── pair.off
 │       ├── pair.baseline
 │       ├── pair.int.flt
+│       ├── pair.diff.par
 │       ├── pair.sim.topo.unw
 │       ├── pair.tflt
 │       └── pair.cc
