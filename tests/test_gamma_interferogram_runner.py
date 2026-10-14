@@ -9,6 +9,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
+from geodesy_analysis.common.case_paths import bind_analysis_case
 from geodesy_analysis.insar.interferogram_generation.gamma.models import (
     GammaInterferogramCase,
 )
@@ -17,6 +18,9 @@ from geodesy_analysis.insar.interferogram_generation.gamma.plan import (
 )
 from geodesy_analysis.insar.interferogram_generation.gamma.runner import (
     run_gamma_interferograms,
+)
+from geodesy_analysis.insar.interferogram_generation.gamma.publication import (
+    interferogram_input_signature,
 )
 
 
@@ -79,7 +83,7 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
     dates = ("20231214", "20231226", "20240107")
 
     def _plan(self, root: Path, *, sensor: str = "sentinel1"):
-        stack_dir = root / "PRE/RSLC"
+        stack_dir = root / "S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET"
         asset_dir = stack_dir / "RSLC"
         asset_dir.mkdir(parents=True)
         assets = []
@@ -117,7 +121,7 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
             encoding="utf-8",
         )
         digest = hashlib.sha256(stack.read_bytes()).hexdigest()
-        baseline_dir = root / "ANALYSIS/GAMMA/ascending/BASELINE"
+        baseline_dir = root / "S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE"
         baseline_dir.mkdir(parents=True)
         (baseline_dir / "baseline_select_SBAS").write_text(
             "20231226 20240107 4 12\n20231214 20231226 -10 12\n",
@@ -127,7 +131,9 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
         baseline.write_text(
             json.dumps(
                 {
-                    "schema_version": 1,
+                    "schema_version": 2,
+                    "backend": {"name": "gamma"},
+                    "case_id": "S1/ASCENDING_128",
                     "status": "complete",
                     "stack_digest": digest,
                     "polarization": "VV",
@@ -136,16 +142,19 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
                     "network_path": "baseline_select_SBAS",
                     "pair_count": 2,
                     "provenance_path": "provenance.json",
+                    "registered_stack_project_path": (
+                        "S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/"
+                        "registered_stack.json"
+                    ),
                 }
             ),
             encoding="utf-8",
         )
-        radar_height = root / "PRE/GEOMETRY/20231226.hgt_sim"
+        radar_height = root / "S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/20231226.hgt_sim"
         radar_height.parent.mkdir(parents=True)
         radar_height.write_bytes(b"\0" * (10 * 4 * 4))
         case = GammaInterferogramCase(
-            name="ascending",
-            project_root=root,
+            paths=bind_analysis_case(root, "ascending", "S1/ASCENDING_128"),
             registered_stack=stack,
             baseline_manifest=baseline,
             polarization="VV",
@@ -163,7 +172,7 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
             coherence_range_window=7,
             coherence_azimuth_window=9,
             coherence_estimator=2,
-            output_dir=root / "ANALYSIS/GAMMA/ascending/INTERFEROGRAM",
+            output_dir=root / "S1/ASCENDING_128/ANALYSIS/GAMMA/INTERFEROGRAM",
         )
         return build_gamma_interferogram_plan(case)
 
@@ -217,10 +226,10 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
             self.assertEqual(summary.pair_count, 2)
             self.assertEqual(summary.acquisition_count, 3)
             for date in self.dates:
-                self.assertTrue((output / "mli" / f"{date}.mli").is_file())
-                self.assertTrue((output / "mli" / f"{date}.mli.par").is_file())
+                self.assertTrue((output / "MLI" / f"{date}.mli").is_file())
+                self.assertTrue((output / "MLI" / f"{date}.mli.par").is_file())
             for pair in plan.pairs:
-                pair_dir = output / "pairs" / pair.name
+                pair_dir = output / "PAIRS" / pair.name
                 for name in (
                     "pair.int",
                     "pair.off",
@@ -235,12 +244,36 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
             manifest = json.loads(
                 (output / "interferogram_manifest.json").read_text(encoding="utf-8")
             )
-            self.assertEqual(manifest["schema_version"], 1)
+            self.assertEqual(manifest["schema_version"], 2)
+            self.assertEqual(manifest["case_id"], "S1/ASCENDING_128")
+            self.assertEqual(manifest["backend"], {"name": "gamma"})
+            self.assertEqual(
+                manifest["registered_stack_project_path"],
+                "S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json",
+            )
+            self.assertEqual(
+                manifest["baseline_manifest_project_path"],
+                "S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE/baseline_manifest.json",
+            )
+            self.assertEqual(
+                manifest["radar_height_project_path"],
+                "S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/20231226.hgt_sim",
+            )
             self.assertEqual(manifest["stack_digest"], plan.stack.source_digest)
             self.assertEqual(manifest["filter_flags"], {"azimuth": 0, "range": 0})
             self.assertEqual(manifest["looks"], {"azimuth": 2, "range": 10})
             self.assertEqual([item["date"] for item in manifest["mli_assets"]], list(self.dates))
             self.assertEqual([item["pair"] for item in manifest["pairs"]], [p.name for p in plan.pairs])
+            provenance = json.loads(
+                (output / "provenance.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(provenance["schema_version"], 2)
+            self.assertEqual(provenance["case_id"], "S1/ASCENDING_128")
+            self.assertNotIn(str(root), json.dumps(manifest, sort_keys=True))
+            self.assertNotIn(str(root), json.dumps(provenance, sort_keys=True))
+            self.assertFalse((output / "quicklooks").exists())
+            self.assertFalse((output / "FIGURES").exists())
+            self.assertEqual(list(output.rglob("*.png")), [])
             self.assertIn('"status":"complete"', progress[-1])
 
     def test_radar_height_size_mismatch_stops_before_pair_commands(self) -> None:
@@ -278,8 +311,8 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
                     )
                 self.assertFalse(plan.case.output_dir.exists())
                 failures = list(
-                    (root / "LOG/ANALYSIS/GAMMA/INTERFEROGRAM").glob(
-                        "ascending.failed-logs-*"
+                    (root / "S1/ASCENDING_128/LOG/ANALYSIS/GAMMA").glob(
+                        "INTERFEROGRAM.failed-logs-*"
                     )
                 )
                 self.assertEqual(len(failures), 1)
@@ -345,9 +378,46 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
                     progress_sink=lambda _: None,
                 )
 
-    def test_quicklook_failure_is_warning_and_scientific_products_publish(self) -> None:
-        def broken_quicklook(**_):
-            raise RuntimeError("renderer unavailable")
+    def test_restart_rejects_changed_case_or_cross_stage_identity(self) -> None:
+        mutations = (
+            ("case_id", "S1/DESCENDING_135"),
+            (
+                "registered_stack_project_path",
+                "S1/DESCENDING_135/PRE/GAMMA/RSLC_SUBSET/registered_stack.json",
+            ),
+            (
+                "baseline_manifest_project_path",
+                "S1/DESCENDING_135/ANALYSIS/GAMMA/BASELINE/baseline_manifest.json",
+            ),
+            (
+                "radar_height_project_path",
+                "S1/DESCENDING_135/PRE/GAMMA/GEOMETRY/20231226.hgt_sim",
+            ),
+        )
+        for key, value in mutations:
+            with self.subTest(key=key), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                plan = self._plan(root)
+                run_gamma_interferograms(
+                    plan, command_runner=_FakeGamma(), progress_sink=lambda _: None
+                )
+                manifest_path = plan.case.output_dir / "interferogram_manifest.json"
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                manifest[key] = value
+                manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+                with self.assertRaisesRegex(FileExistsError, "incomplete or invalid"):
+                    run_gamma_interferograms(
+                        plan,
+                        command_runner=_FakeGamma(),
+                        progress_sink=lambda _: None,
+                    )
+
+    def test_legacy_quicklook_callback_is_ignored(self) -> None:
+        calls: list[object] = []
+
+        def forbidden_quicklook(**values):
+            calls.append(values)
+            raise RuntimeError("renderer must not be called")
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -356,20 +426,31 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
                 plan,
                 command_runner=_FakeGamma(),
                 progress_sink=lambda _: None,
-                quicklook_renderer=broken_quicklook,
+                quicklook_renderer=forbidden_quicklook,
             )
             self.assertEqual(summary.status, "complete")
-            self.assertEqual(len(summary.warnings), len(plan.pairs))
+            self.assertEqual(summary.warnings, ())
+            self.assertEqual(calls, [])
             manifest = json.loads(
                 (plan.case.output_dir / "interferogram_manifest.json").read_text(
                     encoding="utf-8"
                 )
             )
-            self.assertEqual(len(manifest["warnings"]), len(plan.pairs))
+            self.assertNotIn("warnings", manifest)
+            self.assertFalse((plan.case.output_dir / "quicklooks").exists())
             for pair in plan.pairs:
                 self.assertTrue(
-                    (plan.case.output_dir / "pairs" / pair.name / "pair.cc").is_file()
+                    (plan.case.output_dir / "PAIRS" / pair.name / "pair.cc").is_file()
                 )
+
+    def test_input_signature_is_project_location_independent(self) -> None:
+        with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
+            first_plan = self._plan(Path(first))
+            second_plan = self._plan(Path(second))
+            self.assertEqual(
+                interferogram_input_signature(first_plan),
+                interferogram_input_signature(second_plan),
+            )
 
 
 if __name__ == "__main__":

@@ -8,13 +8,18 @@ import re
 from collections.abc import Sequence
 from pathlib import Path
 
-from geodesy_analysis.common.paths import validate_within_root
+from geodesy_analysis.common.case_paths import (
+    bind_analysis_case,
+    resolve_case_input,
+    resolve_case_output,
+)
 
 from .models import GammaInterferogramCase
 
 _CASE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*\Z")
 _POLARIZATION = re.compile(r"[A-Z][A-Z0-9]*\Z")
 _VALUE_KEYS = {
+    "case_root",
     "registered_stack",
     "baseline_manifest",
     "polarization",
@@ -34,6 +39,7 @@ _VALUE_KEYS = {
     "coherence_estimator",
     "output_dir",
 }
+_DEFAULT_KEYS = _VALUE_KEYS - {"case_root"}
 _BUILTIN_DEFAULTS = {
     "spectral_filter": "auto",
     "create_offset_range_start": "0",
@@ -49,8 +55,12 @@ _BUILTIN_DEFAULTS = {
 }
 
 
-def _unknown(section: configparser.SectionProxy, source: Path) -> None:
-    unknown = sorted(set(section) - _VALUE_KEYS)
+def _unknown(
+    section: configparser.SectionProxy,
+    source: Path,
+    allowed: set[str] = _VALUE_KEYS,
+) -> None:
+    unknown = sorted(set(section) - allowed)
     if unknown:
         raise ValueError(f"{source}: unknown key in [{section.name}]: {unknown[0]}")
 
@@ -80,28 +90,6 @@ def _closed_unit_float(value: str, key: str, source: Path) -> float:
     if not math.isfinite(parsed) or not 0 <= parsed <= 1:
         raise ValueError(f"{source}: {key} must be within [0, 1]")
     return parsed
-
-
-def _resolve(root: Path, value: str, label: str) -> Path:
-    candidate = Path(value).expanduser()
-    return validate_within_root(
-        candidate if candidate.is_absolute() else root / candidate,
-        root,
-        label,
-    )
-
-
-def _paths_overlap(first: Path, second: Path) -> bool:
-    try:
-        first.relative_to(second)
-        return True
-    except ValueError:
-        pass
-    try:
-        second.relative_to(first)
-        return True
-    except ValueError:
-        return False
 
 
 def load_gamma_interferogram_config(path: Path) -> tuple[GammaInterferogramCase, ...]:
@@ -134,11 +122,12 @@ def load_gamma_interferogram_config(path: Path) -> tuple[GammaInterferogramCase,
 
     defaults = dict(_BUILTIN_DEFAULTS)
     if parser.has_section("defaults"):
-        _unknown(parser["defaults"], source)
+        _unknown(parser["defaults"], source, _DEFAULT_KEYS)
         defaults.update((key, value.strip()) for key, value in parser["defaults"].items())
 
     cases: list[GammaInterferogramCase] = []
     required = (
+        "case_root",
         "registered_stack",
         "baseline_manifest",
         "polarization",
@@ -172,24 +161,47 @@ def load_gamma_interferogram_config(path: Path) -> tuple[GammaInterferogramCase,
         if spectral_filter not in {"auto", "on", "off"}:
             raise ValueError(f"{source}: spectral_filter must be auto, on, or off")
 
-        registered_stack = _resolve(root, values["registered_stack"], "registered stack")
-        baseline_manifest = _resolve(root, values["baseline_manifest"], "baseline manifest")
-        radar_height = _resolve(root, values["radar_height"], "radar height")
-        output_dir = _resolve(root, values["output_dir"], "interferogram output")
-        input_anchors = (
-            registered_stack.parent,
-            baseline_manifest.parent,
-            radar_height,
-        )
-        if any(_paths_overlap(anchor, output_dir) for anchor in input_anchors):
+        paths = bind_analysis_case(root, name, values["case_root"])
+        registered_stack = resolve_case_input(paths, values["registered_stack"])
+        expected_stack = (
+            paths.case_root
+            / "PRE/GAMMA/RSLC_SUBSET/registered_stack.json"
+        ).resolve()
+        if registered_stack != expected_stack:
             raise ValueError(
-                f"{source}: interferogram output must not overlap an input path"
+                f"{source}: registered_stack must be the canonical case PRE input: "
+                f"{expected_stack}"
+            )
+        baseline_manifest = resolve_case_input(paths, values["baseline_manifest"])
+        expected_baseline = (
+            paths.case_root / "ANALYSIS/GAMMA/BASELINE/baseline_manifest.json"
+        ).resolve()
+        if baseline_manifest != expected_baseline:
+            raise ValueError(
+                f"{source}: baseline_manifest must be the canonical baseline input: "
+                f"{expected_baseline}"
+            )
+        radar_height = resolve_case_input(paths, values["radar_height"])
+        geometry_root = (paths.case_root / "PRE/GAMMA/GEOMETRY").resolve()
+        try:
+            radar_height.relative_to(geometry_root)
+        except ValueError as error:
+            raise ValueError(
+                f"{source}: radar_height must be below case PRE/GAMMA/GEOMETRY"
+            ) from error
+        output_dir = resolve_case_output(paths, values["output_dir"])
+        expected_output = (
+            paths.case_root / "ANALYSIS/GAMMA/INTERFEROGRAM"
+        ).resolve()
+        if output_dir != expected_output:
+            raise ValueError(
+                f"{source}: output_dir must be the canonical interferogram output: "
+                f"{expected_output}"
             )
 
         cases.append(
             GammaInterferogramCase(
-                name=name,
-                project_root=root,
+                paths=paths,
                 registered_stack=registered_stack,
                 baseline_manifest=baseline_manifest,
                 polarization=polarization,

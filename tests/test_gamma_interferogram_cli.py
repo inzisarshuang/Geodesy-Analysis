@@ -18,7 +18,7 @@ class GammaInterferogramCliTests(unittest.TestCase):
     """Keep dry-run read-only and public operation discoverable."""
 
     def _config(self, root: Path) -> Path:
-        stack_dir = root / "PRE/RSLC"
+        stack_dir = root / "S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET"
         data_dir = stack_dir / "RSLC"
         data_dir.mkdir(parents=True)
         dates = ("20231214", "20231226")
@@ -54,7 +54,7 @@ class GammaInterferogramCliTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        baseline_dir = root / "ANALYSIS/GAMMA/ascending/BASELINE"
+        baseline_dir = root / "S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE"
         baseline_dir.mkdir(parents=True)
         (baseline_dir / "baseline_select_SBAS").write_text(
             "20231214 20231226 5 12\n", encoding="utf-8"
@@ -63,7 +63,9 @@ class GammaInterferogramCliTests(unittest.TestCase):
         baseline.write_text(
             json.dumps(
                 {
-                    "schema_version": 1,
+                    "schema_version": 2,
+                    "backend": {"name": "gamma"},
+                    "case_id": "S1/ASCENDING_128",
                     "status": "complete",
                     "stack_digest": hashlib.sha256(stack.read_bytes()).hexdigest(),
                     "polarization": "VV",
@@ -72,11 +74,15 @@ class GammaInterferogramCliTests(unittest.TestCase):
                     "network_path": "baseline_select_SBAS",
                     "pair_count": 1,
                     "provenance_path": "provenance.json",
+                    "registered_stack_project_path": (
+                        "S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/"
+                        "registered_stack.json"
+                    ),
                 }
             ),
             encoding="utf-8",
         )
-        height = root / "PRE/GEOMETRY/20231226.hgt_sim"
+        height = root / "S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/20231226.hgt_sim"
         height.parent.mkdir(parents=True)
         height.write_bytes(b"height")
         config = root / "config/analysis/gamma_interferogram.cfg"
@@ -86,14 +92,15 @@ class GammaInterferogramCliTests(unittest.TestCase):
 [project]
 root = {root}
 [case:ascending]
-registered_stack = PRE/RSLC/registered_stack.json
-baseline_manifest = ANALYSIS/GAMMA/ascending/BASELINE/baseline_manifest.json
+case_root = S1/ASCENDING_128
+registered_stack = S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json
+baseline_manifest = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE/baseline_manifest.json
 polarization = VV
 range_looks = 10
 azimuth_looks = 2
-radar_height = PRE/GEOMETRY/20231226.hgt_sim
+radar_height = S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/20231226.hgt_sim
 spectral_filter = auto
-output_dir = ANALYSIS/GAMMA/ascending/INTERFEROGRAM
+output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/INTERFEROGRAM
 """,
             encoding="utf-8",
         )
@@ -111,6 +118,7 @@ output_dir = ANALYSIS/GAMMA/ascending/INTERFEROGRAM
             self.assertEqual(code, 0)
             payload = json.loads(output.getvalue())
             self.assertEqual(payload["case"], "ascending")
+            self.assertEqual(payload["case_id"], "S1/ASCENDING_128")
             self.assertEqual(payload["reference_date"], "20231226")
             self.assertEqual(payload["polarization"], "VV")
             self.assertEqual(payload["pair_count"], 1)
@@ -118,9 +126,14 @@ output_dir = ANALYSIS/GAMMA/ascending/INTERFEROGRAM
             self.assertEqual(payload["looks"], {"azimuth": 2, "range": 10})
             self.assertEqual(payload["spectral_filter"], "auto")
             self.assertEqual(payload["resolved_filter_flags"], {"azimuth": 0, "range": 0})
-            self.assertEqual(payload["radar_height"], str(root / "PRE/GEOMETRY/20231226.hgt_sim"))
-            self.assertFalse((root / "ANALYSIS/GAMMA/ascending/INTERFEROGRAM").exists())
-            self.assertFalse((root / "LOG").exists())
+            self.assertEqual(
+                payload["radar_height"],
+                str(root / "S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/20231226.hgt_sim"),
+            )
+            self.assertFalse(
+                (root / "S1/ASCENDING_128/ANALYSIS/GAMMA/INTERFEROGRAM").exists()
+            )
+            self.assertFalse((root / "S1/ASCENDING_128/LOG").exists())
 
     def test_configuration_and_operational_errors_have_distinct_exit_codes(self) -> None:
         error = io.StringIO()

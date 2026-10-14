@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from geodesy_analysis.common.case_paths import AnalysisCasePaths
 from geodesy_analysis.insar.common.registered_stack import RegisteredStack
 
 
@@ -13,8 +14,7 @@ from geodesy_analysis.insar.common.registered_stack import RegisteredStack
 class GammaInterferogramCase:
     """One resolved interferogram case and all user-controlled parameters."""
 
-    name: str
-    project_root: Path
+    paths: AnalysisCasePaths
     registered_stack: Path
     baseline_manifest: Path
     polarization: str
@@ -34,12 +34,31 @@ class GammaInterferogramCase:
     coherence_estimator: int
     output_dir: Path
 
+    @property
+    def name(self) -> str:
+        return self.paths.label
+
+    @property
+    def case_id(self) -> str:
+        return self.paths.case_id
+
+    @property
+    def project_root(self) -> Path:
+        return self.paths.project_root
+
+    @property
+    def case_root(self) -> Path:
+        return self.paths.case_root
+
 
 @dataclass(frozen=True)
 class BaselineManifest:
     """Validated identity and ordered network published by baseline selection."""
 
     source_path: Path
+    schema_version: int
+    case_id: str | None
+    registered_stack: Path | None
     stack_digest: str
     polarization: str
     reference_date: str

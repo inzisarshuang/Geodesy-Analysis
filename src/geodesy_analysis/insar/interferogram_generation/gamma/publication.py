@@ -49,9 +49,13 @@ def interferogram_input_signature(plan: GammaInterferogramPlan) -> str:
     """Hash every scientific input and user-controlled execution parameter."""
 
     case = plan.case
+    def project_path(path: Path) -> str:
+        return Path(path).resolve().relative_to(case.project_root).as_posix()
+
     payload = {
         "azimuth_looks": case.azimuth_looks,
-        "baseline_manifest": str(plan.baseline.source_path),
+        "baseline_manifest_project_path": project_path(plan.baseline.source_path),
+        "case_id": case.case_id,
         "coherence": {
             "azimuth_window": case.coherence_azimuth_window,
             "estimator": case.coherence_estimator,
@@ -70,11 +74,12 @@ def interferogram_input_signature(plan: GammaInterferogramPlan) -> str:
         "pairs": [pair.name for pair in plan.pairs],
         "polarization": case.polarization,
         "radar_height": {
-            "path": str(case.radar_height),
+            "project_path": project_path(case.radar_height),
             "sha256": _sha256_file(case.radar_height),
         },
         "range_looks": case.range_looks,
         "reference_date": plan.stack.reference_date,
+        "registered_stack_project_path": project_path(case.registered_stack),
         "stack_digest": plan.stack.source_digest,
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()

@@ -17,9 +17,9 @@ class GammaInterferogramConfigTests(unittest.TestCase):
 
     def _inputs(self, root: Path) -> None:
         for relative in (
-            "PRE/RSLC/registered_stack.json",
-            "ANALYSIS/BASELINE/baseline_manifest.json",
-            "PRE/GEOMETRY/reference.hgt_sim",
+            "S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json",
+            "S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE/baseline_manifest.json",
+            "S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/reference.hgt_sim",
         ):
             path = root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -37,14 +37,15 @@ class GammaInterferogramConfigTests(unittest.TestCase):
 root = {root}
 
 [case:ascending]
-registered_stack = PRE/RSLC/registered_stack.json
-baseline_manifest = ANALYSIS/BASELINE/baseline_manifest.json
+case_root = S1/ASCENDING_128
+registered_stack = S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json
+baseline_manifest = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE/baseline_manifest.json
 polarization = vv
 range_looks = 10
 azimuth_looks = 2
-radar_height = PRE/GEOMETRY/reference.hgt_sim
+radar_height = S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/reference.hgt_sim
 spectral_filter = auto
-output_dir = ANALYSIS/GAMMA/ascending/INTERFEROGRAM
+output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/INTERFEROGRAM
 """
 
     def test_loads_required_values_and_legacy_advanced_defaults(self) -> None:
@@ -55,6 +56,7 @@ output_dir = ANALYSIS/GAMMA/ascending/INTERFEROGRAM
                 self._write(root, self._body(root))
             )
             self.assertEqual(case.name, "ascending")
+            self.assertEqual(case.case_id, "S1/ASCENDING_128")
             self.assertEqual(case.polarization, "VV")
             self.assertEqual((case.range_looks, case.azimuth_looks), (10, 2))
             self.assertEqual(case.spectral_filter, "auto")
@@ -78,7 +80,7 @@ output_dir = ANALYSIS/GAMMA/ascending/INTERFEROGRAM
             self.assertEqual(case.coherence_estimator, 2)
             self.assertEqual(
                 case.output_dir,
-                (root / "ANALYSIS/GAMMA/ascending/INTERFEROGRAM").resolve(),
+                (root / "S1/ASCENDING_128/ANALYSIS/GAMMA/INTERFEROGRAM").resolve(),
             )
 
     def test_case_values_override_defaults_and_modes_are_normalized(self) -> None:
@@ -106,12 +108,13 @@ coherence_range_window = 7
 coherence_azimuth_window = 9
 coherence_estimator = 1
 [case:ascending]
-registered_stack = PRE/RSLC/registered_stack.json
-baseline_manifest = ANALYSIS/BASELINE/baseline_manifest.json
+case_root = S1/ASCENDING_128
+registered_stack = S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json
+baseline_manifest = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE/baseline_manifest.json
 polarization = vv
-radar_height = PRE/GEOMETRY/reference.hgt_sim
+radar_height = S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/reference.hgt_sim
 spectral_filter = OFF
-output_dir = ANALYSIS/INTERFEROGRAM
+output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/INTERFEROGRAM
 """,
             )
             (case,) = load_gamma_interferogram_config(config)
@@ -143,8 +146,8 @@ output_dir = ANALYSIS/INTERFEROGRAM
             ("azimuth_looks = 2", "azimuth_looks = one", "positive integer"),
             ("spectral_filter = auto", "spectral_filter = maybe", "auto, on, or off"),
             (
-                "output_dir = ANALYSIS/GAMMA/ascending/INTERFEROGRAM",
-                "output_dir = ANALYSIS/GAMMA/ascending/INTERFEROGRAM\nsurprise = 1",
+                "output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/INTERFEROGRAM",
+                "output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/INTERFEROGRAM\nsurprise = 1",
                 "unknown key",
             ),
         )
@@ -188,41 +191,77 @@ coherence_estimator = 2
                 with self.assertRaisesRegex(ValueError, message):
                     load_gamma_interferogram_config(self._write(root, body))
 
-    def test_rejects_paths_outside_project_and_output_overlap(self) -> None:
+    def test_rejects_paths_outside_case(self) -> None:
         with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside:
             root = Path(directory)
             self._inputs(root)
             outside_path = Path(outside) / "stack.json"
             outside_path.write_text("outside\n", encoding="utf-8")
             for key, old in (
-                ("registered_stack", "PRE/RSLC/registered_stack.json"),
-                ("baseline_manifest", "ANALYSIS/BASELINE/baseline_manifest.json"),
-                ("radar_height", "PRE/GEOMETRY/reference.hgt_sim"),
+                (
+                    "registered_stack",
+                    "S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json",
+                ),
+                (
+                    "baseline_manifest",
+                    "S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE/baseline_manifest.json",
+                ),
+                (
+                    "radar_height",
+                    "S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/reference.hgt_sim",
+                ),
             ):
                 with self.subTest(key=key):
                     config = self._write(
                         root, self._body(root).replace(f"{key} = {old}", f"{key} = {outside_path}")
                     )
-                    with self.assertRaisesRegex(ValueError, "inside project root"):
+                    with self.assertRaisesRegex(ValueError, "case input.*case root"):
                         load_gamma_interferogram_config(config)
 
-            overlap = self._write(
-                root,
-                self._body(root).replace(
-                    "output_dir = ANALYSIS/GAMMA/ascending/INTERFEROGRAM",
-                    "output_dir = PRE/RSLC/products",
-                ),
-            )
-            with self.assertRaisesRegex(ValueError, "must not overlap"):
-                load_gamma_interferogram_config(overlap)
+    def test_rejects_missing_cross_case_and_noncanonical_paths(self) -> None:
+        replacements = (
+            ("case_root = S1/ASCENDING_128\n", "", "missing keys.*case_root"),
+            (
+                "baseline_manifest = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE/baseline_manifest.json",
+                "baseline_manifest = S1/DESCENDING_135/ANALYSIS/GAMMA/BASELINE/baseline_manifest.json",
+                "case input.*case root",
+            ),
+            (
+                "radar_height = S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/reference.hgt_sim",
+                "radar_height = S1/DESCENDING_135/PRE/GAMMA/GEOMETRY/reference.hgt_sim",
+                "case input.*case root",
+            ),
+            (
+                "output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/INTERFEROGRAM",
+                "output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/OTHER",
+                "canonical interferogram output",
+            ),
+        )
+        for old, new, message in replacements:
+            with self.subTest(message=message), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._inputs(root)
+                config = self._write(root, self._body(root).replace(old, new))
+                with self.assertRaisesRegex(ValueError, message):
+                    load_gamma_interferogram_config(config)
+
+    def test_rejects_input_symlink_escape(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._inputs(root)
+            height = root / "S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/reference.hgt_sim"
+            height.unlink()
+            outside = root / "outside.hgt"
+            outside.write_bytes(b"height")
+            height.symlink_to(outside)
+            with self.assertRaisesRegex(ValueError, "case input.*case root"):
+                load_gamma_interferogram_config(self._write(root, self._body(root)))
 
     def test_select_requires_case_for_multiple_cases(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             self._inputs(root)
-            second = self._body(root).replace("[case:ascending]", "[case:descending]").replace(
-                "ascending/INTERFEROGRAM", "descending/INTERFEROGRAM"
-            )
+            second = self._body(root).replace("[case:ascending]", "[case:descending]")
             config = self._write(root, self._body(root) + second.split("[project]", 1)[1].split("\n", 2)[2])
             cases = load_gamma_interferogram_config(config)
             with self.assertRaisesRegex(ValueError, "--case is required"):
