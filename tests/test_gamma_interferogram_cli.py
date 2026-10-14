@@ -143,7 +143,6 @@ output_dir = ANALYSIS/GAMMA/ascending/INTERFEROGRAM
         project = (repository / "pyproject.toml").read_text(encoding="utf-8")
         for command in (
             "geodesy-analysis-gamma-baseline",
-            "geodesy-analysis-baseline-plot",
             "geodesy-analysis-gamma-interferogram",
         ):
             with self.subTest(command=command):
@@ -178,6 +177,7 @@ output_dir = ANALYSIS/GAMMA/ascending/INTERFEROGRAM
             "registered_stack.json",
             "geodesy-analysis-gamma-baseline",
             "baseline_manifest.json",
+            "geodesy-visualization-insar-baseline",
             "geodesy-analysis-gamma-interferogram",
             "interferogram_manifest.json",
         )

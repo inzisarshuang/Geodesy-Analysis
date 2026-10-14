@@ -14,7 +14,7 @@ Geodesy-Analysis/
 ├── src/geodesy_analysis/
 │   ├── common/                         # 日志、进度、命令和路径安全
 │   └── insar/
-│       ├── baseline_selection/         # 基线网络选择与来源无关绘图
+│       ├── baseline_selection/         # 基线网络计算与选择
 │       └── interferogram_generation/   # MLI、差分干涉图与相干性
 ├── config_examples/                    # 完整注释的正式 CFG 示例
 ├── docs/
@@ -29,8 +29,9 @@ Geodesy-Analysis/
 正式输入是 Geodesy-Preprocessing 发布的 `registered_stack.json`。Analysis 不重新
 下载数据、生成 SLC 或配准影像。
 
-1. `geodesy-analysis-gamma-baseline` 生成 DSI、SBAS 或 PSI 网络、基线清单和图。
-2. `geodesy-analysis-baseline-plot` 在不重新调用 GAMMA 的情况下单独重绘基线图。
+1. `geodesy-analysis-gamma-baseline` 生成 DSI、SBAS 或 PSI 网络及基线清单。
+2. `geodesy-visualization-insar-baseline` 读取基线清单并生成网络图；该命令属于
+   Geodesy-Visualization，在 `envPlot` 中运行。
 3. `geodesy-analysis-gamma-interferogram` 按网络生成 MLI、差分干涉图和相干性。
 
 详细操作见 [GAMMA InSAR workflow](docs/workflows/gamma_insar.md)。
@@ -46,11 +47,10 @@ Geodesy-Analysis/
   /mnt/beegfs/procesados/yiluntan/Geodesy-Analysis
 ```
 
-安装后可在任意目录检查三个入口：
+安装后可在任意目录检查两个 Analysis 入口：
 
 ```bash
 /home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-baseline --help
-/home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-baseline-plot --help
 /home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-interferogram --help
 ```
 
@@ -58,7 +58,9 @@ Geodesy-Analysis/
 
 先复制并修改 `config_examples/gamma_baseline.cfg`，使用 `--dry-run` 检查，再正式
 生成基线。随后复制 `config_examples/gamma_interferogram.cfg`，用同样方式检查和
-运行干涉阶段。CFG 的 `[project] root` 决定全部相对路径，与终端当前目录无关。
+运行干涉阶段。如需基线图，使用 Geodesy-Visualization 的
+`config_examples/baseline_plot.cfg`。CFG 的 `[project] root` 决定全部相对路径，
+与终端当前目录无关。
 
 ```bash
 geodesy-analysis-gamma-baseline --config /absolute/PROJECT/config/analysis/gamma_baseline.cfg --case main --dry-run

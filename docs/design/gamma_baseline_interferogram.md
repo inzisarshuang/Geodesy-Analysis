@@ -9,10 +9,10 @@
 
 本阶段只完成：
 
-1. GAMMA DSI、SBAS、PSI 基线网络生成和自动基线图；
+1. GAMMA DSI、SBAS、PSI 基线网络生成和结果清单；
 2. 按基线网络逐对生成原始干涉图、MLI、轨道基线、去平干涉图、去地形相位
    干涉图和相干性；
-3. 提供独立基线重绘入口，迁入旧 `baselineplot_main.py` 的 CFG 和绘图参数；
+3. 通过 `baseline_manifest.json` 把基线网络交给 Geodesy-Visualization 绘图；
 4. 为后续滤波和解缠发布稳定的结果清单。
 
 本阶段不包含网络相干性优选、滤波、解缠、大气改正或时序反演，也不把科学
@@ -23,7 +23,7 @@
 采用“Python 管理流程，GAMMA 完成科学计算”的方案。Python 负责读取和检查
 CFG、校验 PRE 清单、规划任务、调用命令、显示进度、保存日志以及发布清单；
 `base_calc`、`SLC_intf`、`base_init`、`phase_sim_orb` 等 GAMMA 程序继续负责数值
-计算。现有 `geodesy_analysis.insar.baseline` 中的绘图和网络解析函数继续复用。
+计算。Analysis 不依赖绘图库或 Geodesy-Visualization；二者仅通过结果清单交接。
 
 旧 Shell 脚本只用于命令序列和结果对照，新入口不得在运行时调用
 `GAMMA-InSAR/2-GAMMA-POST/2-baseline_select` 或 `5-product`。
@@ -37,9 +37,6 @@ src/geodesy_analysis/
 │   └── progress.py
 └── insar/
     ├── baseline_selection/
-    │   ├── common/
-    │   │   ├── plot_config.py
-    │   │   └── plot_cli.py
     │   └── gamma/
     │       ├── cli.py
     │       ├── config.py
@@ -86,24 +83,18 @@ CFG 使用 PRE 的 `[project]`、`[defaults]` 和 `[case:name]` 结构。核心�
 
 参考日期直接读取 `registered_stack.json`，不允许 CFG 再填写另一个不一致的值。
 
-基线选择完成后默认自动生成 PNG。独立重绘不重新运行 `base_calc`：
+基线选择完成后，Analysis 发布网络表和 `baseline_manifest.json`，不生成 PNG。
+需要基线图时，运行 Geodesy-Visualization 的独立入口：
 
 ```bash
-geodesy-analysis-baseline-plot \
-  --config PROJECT/config/analysis/baseline_plot.cfg \
+geodesy-visualization-insar-baseline \
+  --config PROJECT/config/visualization/baseline_plot.cfg \
   --case ascending
-
-geodesy-analysis-baseline-plot \
-  /absolute/path/baseline_select_SBAS \
-  --master-date 20231222 \
-  --out /absolute/path/baseline_select_SBAS.png
 ```
 
-独立绘图 CFG 同样采用 `[project]`、`[defaults]` 和 `[case:name]`。它迁入旧脚本的
-`baseline`、`master_date`、`orbit`、`out`、`title`、`dpi`、`figsize`、
-`y_top_extra`、`y_bottom_extra` 和 `font_family` 能力。命令行显式参数覆盖 CFG；
-所有输入和输出仍限制在项目根目录内。绘图属于来源无关的分析诊断，因此入口名
-不含 `gamma`。
+绘图 CFG 同样采用 `[project]`、`[defaults]` 和 `[case:name]`，直接引用已完成的
+`baseline_manifest.json`。Visualization 负责绘图参数和 PNG 发布，且不会重新
+调用 `base_calc`。基线图不是干涉计算的输入，绘图失败不影响科学产品有效性。
 
 ### 4.2 干涉图生成
 

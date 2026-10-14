@@ -10,7 +10,6 @@ from pathlib import Path
 
 from geodesy_analysis.common.command import SubprocessCommandRunner
 from geodesy_analysis.common.progress import emit_progress
-from geodesy_analysis.insar.baseline import plot_baseline_network
 from geodesy_analysis.io import atomic_output_directory
 
 from .models import GammaBaselinePlan
@@ -30,7 +29,6 @@ class BaselineRunSummary:
     status: str
     pair_count: int
     output_dir: Path
-    warnings: tuple[str, ...] = ()
 
 
 def _event(sink: Callable[[str], None], **values: object) -> None:
@@ -128,14 +126,10 @@ def _read_existing(plan: GammaBaselinePlan, signature: str) -> BaselineRunSummar
             raise ValueError("baseline network and image-pair inventories disagree")
         if _nonempty_lines(images) != plan.stack.dates:
             raise ValueError("baseline images inventory is inconsistent")
-        plot_path = manifest.get("plot_path")
-        if plot_path is not None:
-            _published_asset(output, plot_path, "baseline plot")
         return BaselineRunSummary(
             status="skipped",
             pair_count=pair_count,
             output_dir=output,
-            warnings=tuple(manifest.get("warnings", ())),
         )
     except FileExistsError:
         raise
@@ -148,9 +142,8 @@ def run_gamma_baseline(
     *,
     command_runner=None,
     progress_sink: Callable[[str], None] = print,
-    plotter=plot_baseline_network,
 ) -> BaselineRunSummary:
-    """Execute `base_calc`, publish its network, and automatically draw the plot."""
+    """Execute ``base_calc`` and publish its scientific baseline products."""
 
     if not isinstance(plan, GammaBaselinePlan):
         raise TypeError("plan must be GammaBaselinePlan")
@@ -161,7 +154,8 @@ def run_gamma_baseline(
             progress_sink,
             event="batch_finished",
             status="skipped",
-            total=existing.pair_count,
+            index=2,
+            total=2,
             stage="publish",
         )
         return existing
@@ -175,12 +169,11 @@ def run_gamma_baseline(
     stdout_log = log_dir / "base_calc.stdout.log"
     stderr_log = log_dir / "base_calc.stderr.log"
     delegate = command_runner or SubprocessCommandRunner()
-    warnings: list[str] = []
     _event(
         progress_sink,
         event="batch_started",
         status="start",
-        total=3,
+        total=2,
         stage="prepare",
     )
     try:
@@ -193,7 +186,7 @@ def run_gamma_baseline(
                 status="start",
                 item=plan.case.network_type,
                 index=1,
-                total=3,
+                total=2,
                 stage="base_calc",
             )
             delegate.run(
@@ -219,41 +212,9 @@ def run_gamma_baseline(
                 status="complete",
                 item=plan.case.network_type,
                 index=1,
-                total=3,
+                total=2,
                 stage="base_calc",
             )
-
-            plot_name = f"{network.name}.png"
-            try:
-                plotter(
-                    baseline_file=str(network),
-                    master_date=int(plan.stack.reference_date),
-                    out_file=str(staging / plot_name),
-                )
-                plot_path: str | None = plot_name
-                _event(
-                    progress_sink,
-                    event="item_finished",
-                    status="complete",
-                    item=plot_name,
-                    index=2,
-                    total=3,
-                    stage="plot",
-                )
-            except Exception as error:
-                warning = f"baseline plot failed: {error}"
-                warnings.append(warning)
-                plot_path = None
-                _event(
-                    progress_sink,
-                    event="item_finished",
-                    status="warning",
-                    item=plot_name,
-                    index=2,
-                    total=3,
-                    stage="plot",
-                    message=warning,
-                )
 
             provenance = {
                 "command": list(plan.base_calc_command),
@@ -283,14 +244,12 @@ def run_gamma_baseline(
                 "network_path": network.name,
                 "network_type": plan.case.network_type,
                 "pair_count": len(records),
-                "plot_path": plot_path,
                 "polarization": plan.case.polarization,
                 "provenance_path": "provenance.json",
                 "reference_date": plan.stack.reference_date,
                 "schema_version": 1,
                 "stack_digest": plan.stack.source_digest,
                 "status": "complete",
-                "warnings": warnings,
             }
             (staging / "baseline_manifest.json").write_text(
                 json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2)
@@ -303,15 +262,14 @@ def run_gamma_baseline(
             progress_sink,
             event="batch_finished",
             status="complete",
-            index=3,
-            total=3,
+            index=2,
+            total=2,
             stage="publish",
         )
         return BaselineRunSummary(
             status="complete",
             pair_count=len(records),
             output_dir=plan.case.output_dir,
-            warnings=tuple(warnings),
         )
     except BaseException:
         failed_logs = _preserve_failed_logs(log_dir)
@@ -319,7 +277,7 @@ def run_gamma_baseline(
             progress_sink,
             event="batch_finished",
             status="failed",
-            total=3,
+            total=2,
             stage="failed",
             failure_logs=str(failed_logs),
         )

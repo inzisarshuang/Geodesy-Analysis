@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import inspect
 import tempfile
 import unittest
 from pathlib import Path
@@ -37,7 +38,7 @@ class _FakeBaseCalc:
 
 
 class GammaBaselineRunnerTests(unittest.TestCase):
-    """Pin pair normalization, publication, restart safety, and plot warnings."""
+    """Pin pair normalization, scientific publication, and restart safety."""
 
     def _plan(self, root: Path):
         stack = root / "PRE" / "RSLC"
@@ -88,11 +89,6 @@ class GammaBaselineRunnerTests(unittest.TestCase):
         )
         return build_gamma_baseline_plan(case)
 
-    @staticmethod
-    def _plotter(**kwargs):
-        Path(kwargs["out_file"]).write_bytes(b"png")
-        return str(kwargs["out_file"])
-
     def test_parse_berp_removes_self_pairs_normalizes_and_sorts(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "Berp_SC"
@@ -111,7 +107,7 @@ class GammaBaselineRunnerTests(unittest.TestCase):
                 ],
             )
 
-    def test_publishes_inventory_network_manifest_progress_and_plot(self) -> None:
+    def test_publishes_inventory_network_manifest_and_two_stage_progress(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root)
@@ -121,7 +117,6 @@ class GammaBaselineRunnerTests(unittest.TestCase):
                 plan,
                 command_runner=fake,
                 progress_sink=progress.append,
-                plotter=self._plotter,
             )
             output = plan.case.output_dir
             self.assertEqual(summary.status, "complete")
@@ -145,12 +140,26 @@ class GammaBaselineRunnerTests(unittest.TestCase):
             self.assertEqual(manifest["network_type"], "SBAS")
             self.assertEqual(manifest["network_path"], "baseline_select_SBAS")
             self.assertEqual(manifest["pair_count"], 2)
-            self.assertTrue((output / manifest["plot_path"]).is_file())
+            self.assertNotIn("plot_path", manifest)
+            self.assertNotIn("warnings", manifest)
+            self.assertEqual(list(output.glob("*.png")), [])
             self.assertEqual(len(fake.calls), 1)
-            self.assertIn('"event":"batch_started"', progress[0])
-            self.assertIn('"status":"complete"', progress[-1])
+            events = [json.loads(line.split(" ", 1)[1]) for line in progress]
+            self.assertEqual([event["total"] for event in events], [2, 2, 2, 2])
+            self.assertEqual(
+                [(event["event"], event["stage"]) for event in events],
+                [
+                    ("batch_started", "prepare"),
+                    ("item_started", "base_calc"),
+                    ("item_finished", "base_calc"),
+                    ("batch_finished", "publish"),
+                ],
+            )
             log = root / "LOG/ANALYSIS/GAMMA/BASELINE/ascending/base_calc.stdout.log"
             self.assertTrue(log.is_file())
+
+    def test_runner_has_no_plot_callback(self) -> None:
+        self.assertNotIn("plotter", inspect.signature(run_gamma_baseline).parameters)
 
     def test_missing_gamma_output_fails_without_publishing_and_keeps_logs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -160,7 +169,6 @@ class GammaBaselineRunnerTests(unittest.TestCase):
                 run_gamma_baseline(
                     plan,
                     command_runner=_FakeBaseCalc(create_outputs=False),
-                    plotter=self._plotter,
                 )
             self.assertFalse(plan.case.output_dir.exists())
             failures = list(
@@ -175,9 +183,7 @@ class GammaBaselineRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root)
-            run_gamma_baseline(
-                plan, command_runner=_FakeBaseCalc(), plotter=self._plotter
-            )
+            run_gamma_baseline(plan, command_runner=_FakeBaseCalc())
             manifest_path = plan.case.output_dir / "baseline_manifest.json"
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             manifest["pair_count"] = 99
@@ -186,7 +192,6 @@ class GammaBaselineRunnerTests(unittest.TestCase):
                 run_gamma_baseline(
                     plan,
                     command_runner=_FakeBaseCalc(),
-                    plotter=self._plotter,
                 )
 
     def test_matching_output_skips_but_changed_stack_conflicts(self) -> None:
@@ -194,9 +199,9 @@ class GammaBaselineRunnerTests(unittest.TestCase):
             root = Path(directory)
             plan = self._plan(root)
             first = _FakeBaseCalc()
-            run_gamma_baseline(plan, command_runner=first, plotter=self._plotter)
+            run_gamma_baseline(plan, command_runner=first)
             second = _FakeBaseCalc()
-            summary = run_gamma_baseline(plan, command_runner=second, plotter=self._plotter)
+            summary = run_gamma_baseline(plan, command_runner=second)
             self.assertEqual(summary.status, "skipped")
             self.assertEqual(second.calls, [])
 
@@ -210,30 +215,30 @@ class GammaBaselineRunnerTests(unittest.TestCase):
                 run_gamma_baseline(
                     changed,
                     command_runner=_FakeBaseCalc(),
-                    plotter=self._plotter,
                 )
 
-    def test_plot_failure_is_warning_and_network_still_publishes(self) -> None:
-        def broken_plotter(**kwargs):
-            raise RuntimeError("font unavailable")
-
+    def test_legacy_plot_fields_do_not_prevent_restart_without_png(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root)
+            run_gamma_baseline(plan, command_runner=_FakeBaseCalc())
+            manifest_path = plan.case.output_dir / "baseline_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["plot_path"] = "missing-legacy-plot.png"
+            manifest["warnings"] = ["legacy plot warning"]
+            manifest_path.write_text(
+                json.dumps(manifest, sort_keys=True), encoding="utf-8"
+            )
+            fake = _FakeBaseCalc()
+            progress: list[str] = []
             summary = run_gamma_baseline(
-                plan,
-                command_runner=_FakeBaseCalc(),
-                plotter=broken_plotter,
+                plan, command_runner=fake, progress_sink=progress.append
             )
-            self.assertEqual(summary.status, "complete")
-            self.assertEqual(len(summary.warnings), 1)
-            manifest = json.loads(
-                (plan.case.output_dir / "baseline_manifest.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-            self.assertIsNone(manifest["plot_path"])
-            self.assertTrue((plan.case.output_dir / "baseline_select_SBAS").is_file())
+            self.assertEqual(summary.status, "skipped")
+            self.assertEqual(fake.calls, [])
+            event = json.loads(progress[-1].split(" ", 1)[1])
+            self.assertEqual(event["total"], 2)
+            self.assertEqual(event["index"], 2)
 
 
 if __name__ == "__main__":

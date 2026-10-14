@@ -23,13 +23,17 @@ Geodesy-Preprocessing 必须已经发布完整的 `registered_stack.json`。它�
   --case main
 ```
 
-完成后检查网络表、PNG 和 `baseline_manifest.json`。如果只想调整图形，不重算
-网络，可运行：
+完成后检查网络表和 `baseline_manifest.json`；Analysis 不再生成 PNG。若需绘制
+或调整基线图，把 Geodesy-Visualization 的 `config_examples/baseline_plot.cfg`
+复制到项目 `config/visualization/`，然后在 `envPlot` 中运行：
 
 ```bash
-/home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-baseline-plot \
-  --config /absolute/PROJECT/config/analysis/baseline_plot.cfg --case main
+/home/yilun/miniconda3/envs/envPlot/bin/geodesy-visualization-insar-baseline \
+  --config /absolute/PROJECT/config/visualization/baseline_plot.cfg --case main
 ```
+
+该命令仅读取已完成的 `baseline_manifest.json` 及其中引用的网络表，不调用 GAMMA，
+输出位置由 Visualization CFG 决定。基线图不是下一步干涉计算的必需输入。
 
 ## 3. 干涉图生成
 
