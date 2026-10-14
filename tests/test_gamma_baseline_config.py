@@ -16,7 +16,15 @@ class GammaBaselineConfigTests(unittest.TestCase):
     """Pin cfg precedence, validation, and case selection."""
 
     def _project(self, root: Path) -> Path:
-        manifest = root / "PRE" / "RSLC" / "registered_stack.json"
+        manifest = (
+            root
+            / "S1"
+            / "ASCENDING_128"
+            / "PRE"
+            / "GAMMA"
+            / "RSLC_SUBSET"
+            / "registered_stack.json"
+        )
         manifest.parent.mkdir(parents=True)
         manifest.write_text("{}\n", encoding="utf-8")
         return manifest
@@ -43,15 +51,18 @@ max_perpendicular_baseline = 300
 max_temporal_baseline = 100
 polarization = VV
 
-[case:ascending]
-registered_stack = PRE/RSLC/registered_stack.json
+[case:main]
+case_root = S1/ASCENDING_128
+registered_stack = S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json
 network_type = psi
 max_temporal_baseline = 40
-output_dir = ANALYSIS/GAMMA/ascending/BASELINE
+output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE
 """,
             )
             (case,) = load_gamma_baseline_config(config)
-            self.assertEqual(case.name, "ascending")
+            self.assertEqual(case.name, "main")
+            self.assertEqual(case.case_id, "S1/ASCENDING_128")
+            self.assertEqual(case.case_root, (root / "S1/ASCENDING_128").resolve())
             self.assertEqual(case.project_root, root.resolve())
             self.assertEqual(case.network_type, "PSI")
             self.assertEqual(case.max_perpendicular_baseline, 300.0)
@@ -59,11 +70,14 @@ output_dir = ANALYSIS/GAMMA/ascending/BASELINE
             self.assertEqual(case.polarization, "VV")
             self.assertEqual(
                 case.registered_stack,
-                (root / "PRE/RSLC/registered_stack.json").resolve(),
+                (
+                    root
+                    / "S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json"
+                ).resolve(),
             )
             self.assertEqual(
                 case.output_dir,
-                (root / "ANALYSIS/GAMMA/ascending/BASELINE").resolve(),
+                (root / "S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE").resolve(),
             )
 
     def test_accepts_absolute_project_confined_paths_and_normalizes_modes(self) -> None:
@@ -75,12 +89,13 @@ output_dir = ANALYSIS/GAMMA/ascending/BASELINE
                 sections.append(
                     f"""
 [case:{name}]
+case_root = S1/ASCENDING_128
 registered_stack = {manifest}
 polarization = vv
 network_type = {mode}
 max_perpendicular_baseline = 250
 max_temporal_baseline = 80
-output_dir = {root / 'ANALYSIS' / name}
+output_dir = {root / 'S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE'}
 """
                 )
             config = self._write(
@@ -96,7 +111,11 @@ output_dir = {root / 'ANALYSIS' / name}
             ("max_perpendicular_baseline = 300", "max_perpendicular_baseline = 0", "positive finite"),
             ("max_temporal_baseline = 100", "max_temporal_baseline = nan", "positive finite"),
             ("network_type = SBAS", "network_type = dense", "DSI, SBAS, or PSI"),
-            ("output_dir = ANALYSIS/BASELINE", "output_dir = ANALYSIS/BASELINE\nsurprise = 1", "unknown key"),
+            (
+                "output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE",
+                "output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE\nsurprise = 1",
+                "unknown key",
+            ),
         )
         for original, replacement, message in bad_values:
             with self.subTest(replacement=replacement), tempfile.TemporaryDirectory() as directory:
@@ -106,12 +125,13 @@ output_dir = {root / 'ANALYSIS' / name}
 [project]
 root = {root}
 [case:main]
-registered_stack = PRE/RSLC/registered_stack.json
+case_root = S1/ASCENDING_128
+registered_stack = S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json
 polarization = VV
 network_type = SBAS
 max_perpendicular_baseline = 300
 max_temporal_baseline = 100
-output_dir = ANALYSIS/BASELINE
+output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE
 """.replace(original, replacement)
                 config = self._write(
                     root,
@@ -129,18 +149,19 @@ output_dir = ANALYSIS/BASELINE
 [project]
 root = {root}
 [case:../unsafe]
-registered_stack = PRE/RSLC/registered_stack.json
+case_root = S1/ASCENDING_128
+registered_stack = S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json
 polarization = VV
 network_type = SBAS
 max_perpendicular_baseline = 300
 max_temporal_baseline = 100
-output_dir = ANALYSIS/BASELINE
+output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE
 """,
             )
             with self.assertRaisesRegex(ValueError, "unsafe or empty case name"):
                 load_gamma_baseline_config(config)
 
-    def test_rejects_duplicate_sections_unsupported_sections_and_output_overlap(self) -> None:
+    def test_rejects_duplicate_sections_and_unsupported_sections(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             self._project(root)
@@ -160,25 +181,65 @@ output_dir = ANALYSIS/BASELINE
             with self.assertRaisesRegex(ValueError, "unsupported section"):
                 load_gamma_baseline_config(unsupported)
 
+    def test_rejects_missing_invalid_or_cross_case_contract_paths(self) -> None:
+        template = """
+[project]
+root = {root}
+[case:main]
+case_root = S1/ASCENDING_128
+registered_stack = S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json
+polarization = VV
+network_type = SBAS
+max_perpendicular_baseline = 300
+max_temporal_baseline = 100
+output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE
+"""
+        replacements = (
+            ("case_root = S1/ASCENDING_128\n", "", "missing keys.*case_root"),
+            ("S1/ASCENDING_128", "S1/ascending_128", "uppercase POSIX"),
+            (
+                "registered_stack = S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json",
+                "registered_stack = S1/DESCENDING_135/PRE/GAMMA/RSLC_SUBSET/registered_stack.json",
+                "case input.*case root",
+            ),
+            (
+                "output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE",
+                "output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/OTHER",
+                "canonical baseline output",
+            ),
+        )
+        for original, replacement, message in replacements:
+            with self.subTest(message=message), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._project(root)
+                config = self._write(
+                    root, template.format(root=root).replace(original, replacement)
+                )
+                with self.assertRaisesRegex(ValueError, message):
+                    load_gamma_baseline_config(config)
+
+    def test_rejects_output_symlink_escape(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             self._project(root)
-            overlap = self._write(
+            case = root / "S1/ASCENDING_128"
+            outside = root / "outside"
+            outside.mkdir()
+            (case / "ANALYSIS").symlink_to(outside, target_is_directory=True)
+            config = self._write(
                 root,
                 f"""
 [project]
 root = {root}
 [case:main]
-registered_stack = PRE/RSLC/registered_stack.json
+case_root = S1/ASCENDING_128
+registered_stack = S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json
 polarization = VV
-network_type = SBAS
-max_perpendicular_baseline = 300
-max_temporal_baseline = 100
-output_dir = PRE/RSLC/ANALYSIS
+output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE
 """,
             )
-            with self.assertRaisesRegex(ValueError, "must not overlap"):
-                load_gamma_baseline_config(overlap)
+            with self.assertRaisesRegex(ValueError, "case output.*case root"):
+                load_gamma_baseline_config(config)
 
     def test_select_requires_name_for_multiple_cases(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -190,19 +251,21 @@ output_dir = PRE/RSLC/ANALYSIS
 [project]
 root = {root}
 [case:a]
+case_root = S1/ASCENDING_128
 registered_stack = {manifest}
 polarization = VV
 network_type = SBAS
 max_perpendicular_baseline = 300
 max_temporal_baseline = 100
-output_dir = ANALYSIS/A
+output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE
 [case:b]
+case_root = S1/ASCENDING_128
 registered_stack = {manifest}
 polarization = VV
 network_type = SBAS
 max_perpendicular_baseline = 300
 max_temporal_baseline = 100
-output_dir = ANALYSIS/B
+output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE
 """,
             )
             cases = load_gamma_baseline_config(config)

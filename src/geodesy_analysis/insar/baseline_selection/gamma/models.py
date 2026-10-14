@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from geodesy_analysis.common.case_paths import AnalysisCasePaths
 from geodesy_analysis.insar.common.registered_stack import RegisteredStack
 
 
@@ -13,14 +14,29 @@ from geodesy_analysis.insar.common.registered_stack import RegisteredStack
 class GammaBaselineCase:
     """One resolved project case for a single polarization and network type."""
 
-    name: str
-    project_root: Path
+    paths: AnalysisCasePaths
     registered_stack: Path
     polarization: str
     network_type: Literal["DSI", "SBAS", "PSI"]
     max_perpendicular_baseline: float
     max_temporal_baseline: float
     output_dir: Path
+
+    @property
+    def name(self) -> str:
+        return self.paths.label
+
+    @property
+    def case_id(self) -> str:
+        return self.paths.case_id
+
+    @property
+    def project_root(self) -> Path:
+        return self.paths.project_root
+
+    @property
+    def case_root(self) -> Path:
+        return self.paths.case_root
 
 
 @dataclass(frozen=True)

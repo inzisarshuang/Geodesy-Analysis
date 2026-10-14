@@ -8,13 +8,18 @@ import re
 from collections.abc import Sequence
 from pathlib import Path
 
-from geodesy_analysis.common.paths import validate_within_root
+from geodesy_analysis.common.case_paths import (
+    bind_analysis_case,
+    resolve_case_input,
+    resolve_case_output,
+)
 
 from .models import GammaBaselineCase
 
 _CASE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*\Z")
 _POLARIZATION = re.compile(r"[A-Z][A-Z0-9]*\Z")
 _VALUE_KEYS = {
+    "case_root",
     "registered_stack",
     "polarization",
     "network_type",
@@ -22,6 +27,7 @@ _VALUE_KEYS = {
     "max_temporal_baseline",
     "output_dir",
 }
+_DEFAULT_KEYS = _VALUE_KEYS - {"case_root"}
 _BUILTIN_DEFAULTS = {
     "network_type": "SBAS",
     "max_perpendicular_baseline": "300",
@@ -29,8 +35,12 @@ _BUILTIN_DEFAULTS = {
 }
 
 
-def _unknown(section: configparser.SectionProxy, source: Path) -> None:
-    unknown = sorted(set(section) - _VALUE_KEYS)
+def _unknown(
+    section: configparser.SectionProxy,
+    source: Path,
+    allowed: set[str] = _VALUE_KEYS,
+) -> None:
+    unknown = sorted(set(section) - allowed)
     if unknown:
         raise ValueError(f"{source}: unknown key in [{section.name}]: {unknown[0]}")
 
@@ -43,28 +53,6 @@ def _positive_float(value: str, key: str, source: Path) -> float:
     if not math.isfinite(parsed) or parsed <= 0:
         raise ValueError(f"{source}: {key} must be a positive finite number")
     return parsed
-
-
-def _resolve(root: Path, value: str, label: str) -> Path:
-    candidate = Path(value).expanduser()
-    return validate_within_root(
-        candidate if candidate.is_absolute() else root / candidate,
-        root,
-        label,
-    )
-
-
-def _paths_overlap(first: Path, second: Path) -> bool:
-    try:
-        first.relative_to(second)
-        return True
-    except ValueError:
-        pass
-    try:
-        second.relative_to(first)
-        return True
-    except ValueError:
-        return False
 
 
 def load_gamma_baseline_config(path: Path) -> tuple[GammaBaselineCase, ...]:
@@ -95,7 +83,7 @@ def load_gamma_baseline_config(path: Path) -> tuple[GammaBaselineCase, ...]:
 
     defaults = dict(_BUILTIN_DEFAULTS)
     if parser.has_section("defaults"):
-        _unknown(parser["defaults"], source)
+        _unknown(parser["defaults"], source, _DEFAULT_KEYS)
         defaults.update(
             (key, value.strip()) for key, value in parser["defaults"].items()
         )
@@ -113,7 +101,7 @@ def load_gamma_baseline_config(path: Path) -> tuple[GammaBaselineCase, ...]:
         _unknown(section, source)
         values = dict(defaults)
         values.update((key, value.strip()) for key, value in section.items())
-        required = ("registered_stack", "polarization", "output_dir")
+        required = ("case_root", "registered_stack", "polarization", "output_dir")
         missing = [key for key in required if not values.get(key)]
         if missing:
             raise ValueError(
@@ -126,18 +114,34 @@ def load_gamma_baseline_config(path: Path) -> tuple[GammaBaselineCase, ...]:
         network_type = values["network_type"].upper()
         if network_type not in {"DSI", "SBAS", "PSI"}:
             raise ValueError(f"{source}: network_type must be DSI, SBAS, or PSI")
-        registered_stack = _resolve(
-            root, values["registered_stack"], "registered stack"
+        paths = bind_analysis_case(root, name, values["case_root"])
+        registered_stack = resolve_case_input(
+            paths, values["registered_stack"]
         )
-        output_dir = _resolve(root, values["output_dir"], "baseline output")
-        if _paths_overlap(registered_stack.parent, output_dir):
+        expected_stack = (
+            paths.case_root
+            / "PRE"
+            / "GAMMA"
+            / "RSLC_SUBSET"
+            / "registered_stack.json"
+        ).resolve()
+        if registered_stack != expected_stack:
             raise ValueError(
-                f"{source}: baseline output must not overlap registered stack directory"
+                f"{source}: registered_stack must be the canonical case PRE input: "
+                f"{expected_stack}"
+            )
+        output_dir = resolve_case_output(paths, values["output_dir"])
+        expected_output = (
+            paths.case_root / "ANALYSIS" / "GAMMA" / "BASELINE"
+        ).resolve()
+        if output_dir != expected_output:
+            raise ValueError(
+                f"{source}: output_dir must be the canonical baseline output: "
+                f"{expected_output}"
             )
         cases.append(
             GammaBaselineCase(
-                name=name,
-                project_root=root,
+                paths=paths,
                 registered_stack=registered_stack,
                 polarization=polarization,
                 network_type=network_type,

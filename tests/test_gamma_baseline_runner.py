@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from geodesy_analysis.common.case_paths import bind_analysis_case
 from geodesy_analysis.insar.baseline_selection.gamma.models import GammaBaselineCase
 from geodesy_analysis.insar.baseline_selection.gamma.plan import build_gamma_baseline_plan
 from geodesy_analysis.insar.baseline_selection.gamma.publication import parse_berp_sc
@@ -41,7 +42,7 @@ class GammaBaselineRunnerTests(unittest.TestCase):
     """Pin pair normalization, scientific publication, and restart safety."""
 
     def _plan(self, root: Path):
-        stack = root / "PRE" / "RSLC"
+        stack = root / "S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET"
         data = stack / "RSLC"
         data.mkdir(parents=True, exist_ok=True)
         dates = ("20231214", "20231226", "20240107")
@@ -78,14 +79,13 @@ class GammaBaselineRunnerTests(unittest.TestCase):
             encoding="utf-8",
         )
         case = GammaBaselineCase(
-            name="ascending",
-            project_root=root,
+            paths=bind_analysis_case(root, "ascending", "S1/ASCENDING_128"),
             registered_stack=manifest,
             polarization="VV",
             network_type="SBAS",
             max_perpendicular_baseline=300.0,
             max_temporal_baseline=100.0,
-            output_dir=root / "ANALYSIS/GAMMA/ascending/BASELINE",
+            output_dir=root / "S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE",
         )
         return build_gamma_baseline_plan(case)
 
@@ -133,7 +133,13 @@ class GammaBaselineRunnerTests(unittest.TestCase):
             manifest = json.loads(
                 (output / "baseline_manifest.json").read_text(encoding="utf-8")
             )
-            self.assertEqual(manifest["schema_version"], 1)
+            self.assertEqual(manifest["schema_version"], 2)
+            self.assertEqual(manifest["case_id"], "S1/ASCENDING_128")
+            self.assertEqual(manifest["backend"], {"name": "gamma"})
+            self.assertEqual(
+                manifest["registered_stack_project_path"],
+                "S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json",
+            )
             self.assertEqual(manifest["stack_digest"], plan.stack.source_digest)
             self.assertEqual(manifest["reference_date"], "20231226")
             self.assertEqual(manifest["polarization"], "VV")
@@ -143,6 +149,18 @@ class GammaBaselineRunnerTests(unittest.TestCase):
             self.assertNotIn("plot_path", manifest)
             self.assertNotIn("warnings", manifest)
             self.assertEqual(list(output.glob("*.png")), [])
+            provenance = json.loads(
+                (output / "provenance.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(provenance["schema_version"], 2)
+            self.assertEqual(provenance["case_id"], "S1/ASCENDING_128")
+            self.assertEqual(provenance["backend"], {"name": "gamma"})
+            self.assertEqual(
+                provenance["registered_stack_project_path"],
+                "S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json",
+            )
+            self.assertNotIn(str(root), json.dumps(manifest, sort_keys=True))
+            self.assertNotIn(str(root), json.dumps(provenance, sort_keys=True))
             self.assertEqual(len(fake.calls), 1)
             events = [json.loads(line.split(" ", 1)[1]) for line in progress]
             self.assertEqual([event["total"] for event in events], [2, 2, 2, 2])
@@ -155,7 +173,10 @@ class GammaBaselineRunnerTests(unittest.TestCase):
                     ("batch_finished", "publish"),
                 ],
             )
-            log = root / "LOG/ANALYSIS/GAMMA/BASELINE/ascending/base_calc.stdout.log"
+            log = (
+                root
+                / "S1/ASCENDING_128/LOG/ANALYSIS/GAMMA/BASELINE/base_calc.stdout.log"
+            )
             self.assertTrue(log.is_file())
 
     def test_runner_has_no_plot_callback(self) -> None:
@@ -172,8 +193,8 @@ class GammaBaselineRunnerTests(unittest.TestCase):
                 )
             self.assertFalse(plan.case.output_dir.exists())
             failures = list(
-                (root / "LOG/ANALYSIS/GAMMA/BASELINE").glob(
-                    "ascending.failed-logs-*"
+                (root / "S1/ASCENDING_128/LOG/ANALYSIS/GAMMA").glob(
+                    "BASELINE.failed-logs-*"
                 )
             )
             self.assertEqual(len(failures), 1)
@@ -217,17 +238,51 @@ class GammaBaselineRunnerTests(unittest.TestCase):
                     command_runner=_FakeBaseCalc(),
                 )
 
-    def test_legacy_plot_fields_do_not_prevent_restart_without_png(self) -> None:
+    def test_restart_rejects_changed_case_or_registered_stack_identity(self) -> None:
+        mutations = (
+            ("case_id", "S1/DESCENDING_135"),
+            (
+                "registered_stack_project_path",
+                "S1/DESCENDING_135/PRE/GAMMA/RSLC_SUBSET/registered_stack.json",
+            ),
+        )
+        for key, value in mutations:
+            with self.subTest(key=key), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                plan = self._plan(root)
+                run_gamma_baseline(plan, command_runner=_FakeBaseCalc())
+                manifest_path = plan.case.output_dir / "baseline_manifest.json"
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                manifest[key] = value
+                manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+                with self.assertRaisesRegex(FileExistsError, "incomplete or invalid"):
+                    run_gamma_baseline(plan, command_runner=_FakeBaseCalc())
+
+    def test_legacy_schema_one_output_remains_restart_compatible(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root)
             run_gamma_baseline(plan, command_runner=_FakeBaseCalc())
             manifest_path = plan.case.output_dir / "baseline_manifest.json"
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["schema_version"] = 1
+            manifest.pop("backend")
+            manifest.pop("case_id")
+            manifest.pop("registered_stack_project_path")
             manifest["plot_path"] = "missing-legacy-plot.png"
             manifest["warnings"] = ["legacy plot warning"]
             manifest_path.write_text(
                 json.dumps(manifest, sort_keys=True), encoding="utf-8"
+            )
+            provenance_path = plan.case.output_dir / "provenance.json"
+            provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+            provenance.pop("backend")
+            provenance.pop("case_id")
+            provenance.pop("registered_stack_project_path")
+            provenance.pop("schema_version")
+            provenance_path.write_text(
+                json.dumps(provenance, sort_keys=True), encoding="utf-8"
             )
             fake = _FakeBaseCalc()
             progress: list[str] = []

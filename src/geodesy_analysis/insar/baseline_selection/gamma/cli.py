@@ -46,6 +46,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
             json.dumps(
                 {
                     "case": case.name,
+                    "case_id": case.case_id,
                     "expected_network": plan.expected_network_name,
                     "max_perpendicular_baseline_m": case.max_perpendicular_baseline,
                     "max_temporal_baseline_days": case.max_temporal_baseline,

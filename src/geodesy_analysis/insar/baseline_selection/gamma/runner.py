@@ -59,6 +59,24 @@ def _nonempty_lines(path: Path) -> tuple[str, ...]:
     )
 
 
+def _project_path(plan: GammaBaselinePlan, path: Path) -> str:
+    """Return one resolved project-confined path in portable POSIX form."""
+
+    resolved = Path(path).resolve()
+    try:
+        return resolved.relative_to(plan.case.project_root).as_posix()
+    except ValueError as error:
+        raise ValueError(f"baseline path leaves project root: {resolved}") from error
+
+
+def _portable_command(plan: GammaBaselinePlan) -> list[str]:
+    command: list[str] = []
+    for value in plan.base_calc_command:
+        path = Path(value)
+        command.append(_project_path(plan, path) if path.is_absolute() else value)
+    return command
+
+
 def _next_failed_log_directory(active: Path) -> Path:
     index = 1
     while True:
@@ -97,8 +115,33 @@ def _read_existing(plan: GammaBaselinePlan, signature: str) -> BaselineRunSummar
             raise FileExistsError(
                 f"baseline output was produced from different inputs: {output}"
             )
-        if manifest.get("schema_version") != 1 or manifest.get("status") != "complete":
-            raise ValueError("baseline manifest is not complete schema version 1")
+        schema_version = manifest.get("schema_version")
+        if schema_version not in {1, 2} or manifest.get("status") != "complete":
+            raise ValueError("baseline manifest is not a supported complete schema")
+        if schema_version == 2:
+            registered_stack_project_path = _project_path(
+                plan, plan.case.registered_stack
+            )
+            if manifest.get("case_id") != plan.case.case_id:
+                raise ValueError("baseline manifest case identity is inconsistent")
+            if manifest.get("backend") != {"name": "gamma"}:
+                raise ValueError("baseline manifest backend is inconsistent")
+            if (
+                manifest.get("registered_stack_project_path")
+                != registered_stack_project_path
+            ):
+                raise ValueError("baseline manifest registered stack is inconsistent")
+            if provenance.get("schema_version") != 2:
+                raise ValueError("baseline provenance schema is inconsistent")
+            if provenance.get("case_id") != plan.case.case_id:
+                raise ValueError("baseline provenance case identity is inconsistent")
+            if provenance.get("backend") != {"name": "gamma"}:
+                raise ValueError("baseline provenance backend is inconsistent")
+            if (
+                provenance.get("registered_stack_project_path")
+                != registered_stack_project_path
+            ):
+                raise ValueError("baseline provenance registered stack is inconsistent")
         if manifest.get("stack_digest") != plan.stack.source_digest:
             raise ValueError("baseline manifest stack digest is inconsistent")
         if manifest.get("reference_date") != plan.stack.reference_date:
@@ -160,11 +203,7 @@ def run_gamma_baseline(
         )
         return existing
 
-    log_dir = (
-        plan.case.project_root
-        / "LOG/ANALYSIS/GAMMA/BASELINE"
-        / plan.case.name
-    )
+    log_dir = plan.case.case_root / "LOG/ANALYSIS/GAMMA/BASELINE"
     _begin_logs(log_dir)
     stdout_log = log_dir / "base_calc.stdout.log"
     stderr_log = log_dir / "base_calc.stderr.log"
@@ -216,12 +255,17 @@ def run_gamma_baseline(
                 stage="base_calc",
             )
 
+            registered_stack_project_path = _project_path(
+                plan, plan.case.registered_stack
+            )
             provenance = {
-                "command": list(plan.base_calc_command),
+                "backend": {"name": "gamma"},
+                "case_id": plan.case.case_id,
+                "command": _portable_command(plan),
                 "input_signature": signature,
                 "logs": {
-                    "stderr": str(stderr_log),
-                    "stdout": str(stdout_log),
+                    "stderr_project_path": _project_path(plan, stderr_log),
+                    "stdout_project_path": _project_path(plan, stdout_log),
                 },
                 "parameters": {
                     "max_perpendicular_baseline": plan.case.max_perpendicular_baseline,
@@ -229,10 +273,9 @@ def run_gamma_baseline(
                     "network_type": plan.case.network_type,
                     "polarization": plan.case.polarization,
                 },
-                "registered_stack": {
-                    "path": str(plan.stack.source_path),
-                    "sha256": plan.stack.source_digest,
-                },
+                "registered_stack_project_path": registered_stack_project_path,
+                "registered_stack_sha256": plan.stack.source_digest,
+                "schema_version": 2,
             }
             (staging / "provenance.json").write_text(
                 json.dumps(provenance, ensure_ascii=False, sort_keys=True, indent=2)
@@ -240,6 +283,8 @@ def run_gamma_baseline(
                 encoding="utf-8",
             )
             manifest = {
+                "backend": {"name": "gamma"},
+                "case_id": plan.case.case_id,
                 "image_pairs_path": image_pairs.name,
                 "network_path": network.name,
                 "network_type": plan.case.network_type,
@@ -247,7 +292,8 @@ def run_gamma_baseline(
                 "polarization": plan.case.polarization,
                 "provenance_path": "provenance.json",
                 "reference_date": plan.stack.reference_date,
-                "schema_version": 1,
+                "registered_stack_project_path": registered_stack_project_path,
+                "schema_version": 2,
                 "stack_digest": plan.stack.source_digest,
                 "status": "complete",
             }
