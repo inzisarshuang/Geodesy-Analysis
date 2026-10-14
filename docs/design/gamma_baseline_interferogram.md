@@ -65,14 +65,15 @@ src/geodesy_analysis/
 ```bash
 geodesy-analysis-gamma-baseline \
   --config PROJECT/config/analysis/gamma_baseline.cfg \
-  --case ascending --dry-run
+  --case main --dry-run
 
 geodesy-analysis-gamma-baseline \
   --config PROJECT/config/analysis/gamma_baseline.cfg \
-  --case ascending
+  --case main
 ```
 
-CFG 使用 PRE 的 `[project]`、`[defaults]` 和 `[case:name]` 结构。核心参数为：
+CFG 使用 PRE 的 `[project]`、`[defaults]` 和 `[case:name]` 结构。`name` 只是 CLI
+选择标签；`case_root`（例如 `S1/ASCENDING_128`）才是正式目录身份。核心参数为：
 
 - `registered_stack`：PRE 发布的 schema v2 完整注册栈；
 - `polarization`：本次分析极化，必须存在于清单并覆盖全部日期；
@@ -101,11 +102,11 @@ geodesy-visualization-insar-baseline \
 ```bash
 geodesy-analysis-gamma-interferogram \
   --config PROJECT/config/analysis/gamma_interferogram.cfg \
-  --case ascending --dry-run
+  --case main --dry-run
 
 geodesy-analysis-gamma-interferogram \
   --config PROJECT/config/analysis/gamma_interferogram.cfg \
-  --case ascending
+  --case main
 ```
 
 核心参数为：
@@ -136,7 +137,7 @@ geodesy-analysis-gamma-interferogram \
 4. 在工作目录生成 `images` 和 `SLC_tab`；
 5. 按 DSI/SBAS/PSI 模式调用一次 `base_calc`；
 6. 解析 `Berp_SC`，去除自干涉、标准化日期顺序并确定性排序；
-7. 生成网络表和 PNG；
+7. 生成网络表；
 8. 最后发布 `baseline_manifest.json`。
 
 输出目录：
@@ -146,7 +147,6 @@ BASELINE/
 ├── images
 ├── image_pairs_SBAS
 ├── baseline_select_SBAS
-├── baseline_select_SBAS.png
 ├── baseline_manifest.json
 └── provenance.json
 ```
@@ -162,16 +162,15 @@ BASELINE/
    `create_diff_par → phase_sim_orb → sub_phase → cc_wave`；其中
    `create_diff_par` 生成 `sub_phase` 明确要求的 DIFF/GEO 参数文件；
 4. 全部 MLI 完成后生成 `ave_mli`；
-5. 快视图属于辅助产物。快视图失败记录 warning，但不删除已经验证通过的科学
-   产物；核心 GAMMA 命令失败则本阶段失败；
+5. Analysis 不执行渲染，所有图像由 Geodesy-Visualization 独立生成；
 6. 全部干涉对通过后发布 `interferogram_manifest.json`。
 
 输出目录不沿用含义模糊的旧 `project/PRODUCT`：
 
 ```text
 INTERFEROGRAM/
-├── mli/
-├── pairs/
+├── MLI/
+├── PAIRS/
 │   └── YYYYMMDD-YYYYMMDD/
 │       ├── pair.int
 │       ├── pair.off
@@ -181,7 +180,6 @@ INTERFEROGRAM/
 │       ├── pair.sim.topo.unw
 │       ├── pair.tflt
 │       └── pair.cc
-├── quicklooks/
 ├── interferogram_manifest.json
 └── provenance.json
 ```
@@ -198,8 +196,8 @@ INTERFEROGRAM/
 详细命令输出写入：
 
 ```text
-PROJECT/LOG/ANALYSIS/GAMMA/BASELINE/<case>/
-PROJECT/LOG/ANALYSIS/GAMMA/INTERFEROGRAM/<case>/
+S1/ASCENDING_128/LOG/ANALYSIS/GAMMA/BASELINE/
+S1/ASCENDING_128/LOG/ANALYSIS/GAMMA/INTERFEROGRAM/
 ```
 
 干涉阶段每个日期和每个干涉对使用独立日志，终端只显示统一进度和失败日志路径。
@@ -222,7 +220,7 @@ PROJECT/LOG/ANALYSIS/GAMMA/INTERFEROGRAM/<case>/
 - CFG 合并顺序、未知参数、越界路径、非法 case 和阈值；
 - 注册栈状态、后端、网格类型、极化完整性和缺失文件；
 - 三类 `base_calc` 命令及旧脚本等价的网络表解析；
-- 基线选择自动出图，以及独立绘图入口的旧 CFG 参数、命令行覆盖和默认命名；
+- 基线清单与 Visualization 独立绘图边界；
 - Sentinel-1 与其他传感器的频谱滤波解析；
 - MLI 去重、逐对命令顺序、错误停止、失败日志保留和原子发布；
 - 相同输入跳过、不同输入冲突；
@@ -238,8 +236,8 @@ PROJECT/LOG/ANALYSIS/GAMMA/INTERFEROGRAM/<case>/
 1. 三个安装后命令可从任意目录使用绝对 CFG 路径运行；
 2. CFG 示例包含功能、调用方法、运行示例、参数解释、易错项、结果、日志和完成
    判断；
-3. 基线阶段从 PRE 清单生成确定性网络表和基线图，独立入口可在不重算基线的
-   情况下重新绘图；
+3. 基线阶段从 PRE 清单生成确定性网络表，Visualization 可在不重算基线的情况下
+   独立绘图；
 4. 干涉阶段按清单生成全部核心产物，并发布可供滤波阶段读取的清单；
 5. 单元测试全部通过，`envInSAR` 安装入口通过，少量真实干涉对完成对照；
 6. 不修改 PRE、Adapter 或旧生产脚本，也不声称滤波和解缠已经完成。

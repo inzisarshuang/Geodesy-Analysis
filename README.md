@@ -60,7 +60,9 @@ Geodesy-Analysis/
 生成基线。随后复制 `config_examples/gamma_interferogram.cfg`，用同样方式检查和
 运行干涉阶段。如需基线图，使用 Geodesy-Visualization 的
 `config_examples/baseline_plot.cfg`。CFG 的 `[project] root` 决定全部相对路径，
-与终端当前目录无关。
+与终端当前目录无关。每个 `[case:main]` 还必须声明类似
+`case_root = S1/ASCENDING_128` 的正式 case 路径；`main` 只是 CLI 选择标签，不参与
+目录命名。
 
 ```bash
 geodesy-analysis-gamma-baseline --config /absolute/PROJECT/config/analysis/gamma_baseline.cfg --case main --dry-run
@@ -71,15 +73,21 @@ geodesy-analysis-gamma-interferogram --config /absolute/PROJECT/config/analysis/
 
 ## 5. Outputs and Logs / 结果与日志
 
-- 基线结果：`ANALYSIS/GAMMA/<case>/BASELINE/`
-- 干涉结果：`ANALYSIS/GAMMA/<case>/INTERFEROGRAM/`
-- 基线日志：`LOG/ANALYSIS/GAMMA/BASELINE/<case>/`
-- 干涉日志：`LOG/ANALYSIS/GAMMA/INTERFEROGRAM/<case>/`
+- PRE 输入：`<case_root>/PRE/GAMMA/RSLC_SUBSET/registered_stack.json`
+- 基线结果：`<case_root>/ANALYSIS/GAMMA/BASELINE/`
+- 干涉结果：`<case_root>/ANALYSIS/GAMMA/INTERFEROGRAM/`，内部使用 `MLI/` 与
+  `PAIRS/<日期对>/`
+- 基线日志：`<case_root>/LOG/ANALYSIS/GAMMA/BASELINE/`
+- 干涉日志：`<case_root>/LOG/ANALYSIS/GAMMA/INTERFEROGRAM/`
 
 只有清单和所有核心文件通过检查后才发布正式目录。相同输入可安全跳过；输入或参数
-变化时停止并要求用户处理旧结果，不静默覆盖。
+变化时停止并要求用户处理旧结果，不静默覆盖。新写出的 Analysis 清单均为 portable
+schema v2；迁移期读端继续接受 schema v1。Analysis 不创建渲染产物，所有图像由
+Geodesy-Visualization 发布。
 
 ## 6. Current Scope / 当前范围
 
 本阶段完成到差分干涉图和相干性。滤波、解缠、大气改正、MintPy、DS-InSAR 不在
 当前完成声明内。旧脚本在真实数据对照完成前保留为回退来源，但新代码不导入旧仓库。
+本次代码重构只改变新运行的契约，不移动、复制或删除现有研究项目数据；真实项目迁移
+由后续独立的可预览迁移任务完成。

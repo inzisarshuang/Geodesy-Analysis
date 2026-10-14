@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import unittest
 from pathlib import Path
 
@@ -40,6 +41,28 @@ class ArchitectureTests(unittest.TestCase):
             (source_root / "geodesy_analysis/insar/baseline_selection/common/plot_config.py").exists()
         )
         self.assertFalse((repository / "config_examples/baseline_plot.cfg").exists())
+
+    def test_public_contract_has_no_legacy_analysis_layout(self) -> None:
+        repository = Path(__file__).resolve().parents[1]
+        paths = [repository / "README.md"]
+        paths.extend((repository / "config_examples").glob("*.cfg"))
+        paths.extend(
+            path
+            for path in (repository / "docs").rglob("*.md")
+            if "superpowers" not in path.parts
+        )
+        paths.extend((repository / "src").rglob("*.py"))
+        forbidden = (
+            re.compile(r"LOG/ANALYSIS/GAMMA/(?:BASELINE|INTERFEROGRAM)/<case"),
+            re.compile(r"/quicklooks(?:/|`|\s)"),
+            re.compile(r"ANALYSIS(?:/[^/\s`]+)*/FIGURES"),
+            re.compile(r"ANALYSIS/GAMMA/(?:ascending|descending|main)/"),
+        )
+        for path in paths:
+            text = path.read_text(encoding="utf-8")
+            for pattern in forbidden:
+                with self.subTest(path=path, pattern=pattern.pattern):
+                    self.assertIsNone(pattern.search(text))
 
 
 if __name__ == "__main__":

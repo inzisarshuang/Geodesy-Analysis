@@ -37,3 +37,20 @@ This repository is not yet the default implementation.
 Analysis 只读取 `registered_stack.json`，不扫描 PRE 文件夹猜测影像。基线阶段发布
 `baseline_manifest.json`，干涉阶段发布 `interferogram_manifest.json`。后续滤波与
 解缠只读取后一份清单，因此各阶段可以独立检查、重跑和替换。
+
+每个运行同时绑定研究项目根目录和两级大写正式 case 路径，例如
+`S1/ASCENDING_128`。`--case main` 中的 `main` 只是配置段选择标签，绝不用于推导
+目录身份。项目输入必须留在项目内，Analysis 输出与日志则必须留在正式 case 内；
+解析后的符号链接同样接受边界检查。
+
+当前 GAMMA 契约固定使用：
+
+- `PRE/GAMMA/RSLC_SUBSET/registered_stack.json` 作为 Analysis 输入；
+- `ANALYSIS/GAMMA/BASELINE/` 与 `ANALYSIS/GAMMA/INTERFEROGRAM/` 作为科学输出；
+- `INTERFEROGRAM/MLI/` 与 `INTERFEROGRAM/PAIRS/<日期对>/` 组织自有资产；
+- `LOG/ANALYSIS/GAMMA/BASELINE/` 与 `LOG/ANALYSIS/GAMMA/INTERFEROGRAM/` 保存日志。
+
+新 writer 只发布 portable schema v2：同一清单拥有的资产使用清单相对路径，跨阶段
+引用使用明确命名的项目相对字段。迁移期 reader 仍接受 schema v1。Analysis 不拥有
+任何渲染目录或图像；Geodesy-Visualization 独立读取清单并发布全部渲染结果。本次
+契约更新不会迁移已有研究项目文件。
