@@ -1,7 +1,9 @@
 # Project-Driven Study Layout Design
 
-**Date:** 2026-10-14  
-**Status:** proposed for user review  
+**Date:** 2026-10-14
+
+**Status:** proposed for user review
+
 **Scope:** shared project contract for Geodesy-Workflow, Geodesy-Preprocessing,
 Geodesy-Analysis, and Geodesy-Visualization
 
