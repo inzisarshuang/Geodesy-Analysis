@@ -86,4 +86,45 @@ def interferogram_input_signature(plan: GammaInterferogramPlan) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-__all__ = ["ensure_nonempty", "gamma_parameter", "interferogram_input_signature"]
+def legacy_interferogram_input_signature(plan: GammaInterferogramPlan) -> str:
+    """Reproduce the schema-v1 absolute-path signature for restart compatibility."""
+
+    case = plan.case
+    payload = {
+        "azimuth_looks": case.azimuth_looks,
+        "baseline_manifest": str(plan.baseline.source_path),
+        "coherence": {
+            "azimuth_window": case.coherence_azimuth_window,
+            "estimator": case.coherence_estimator,
+            "range_window": case.coherence_range_window,
+        },
+        "create_offset": {
+            "azimuth_search": case.create_offset_azimuth_search,
+            "azimuth_start": case.create_offset_azimuth_start,
+            "azimuth_window": case.create_offset_azimuth_window,
+            "correlation_threshold": case.create_offset_correlation_threshold,
+            "range_search": case.create_offset_range_search,
+            "range_start": case.create_offset_range_start,
+            "range_window": case.create_offset_range_window,
+        },
+        "filter_flags": [plan.spectral_filter_range, plan.spectral_filter_azimuth],
+        "pairs": [pair.name for pair in plan.pairs],
+        "polarization": case.polarization,
+        "radar_height": {
+            "path": str(case.radar_height),
+            "sha256": _sha256_file(case.radar_height),
+        },
+        "range_looks": case.range_looks,
+        "reference_date": plan.stack.reference_date,
+        "stack_digest": plan.stack.source_digest,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+__all__ = [
+    "ensure_nonempty",
+    "gamma_parameter",
+    "interferogram_input_signature",
+    "legacy_interferogram_input_signature",
+]

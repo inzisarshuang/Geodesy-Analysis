@@ -176,6 +176,42 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
         )
         return build_gamma_interferogram_plan(case)
 
+    def _legacy_signature(self, plan) -> str:
+        case = plan.case
+        payload = {
+            "azimuth_looks": case.azimuth_looks,
+            "baseline_manifest": str(plan.baseline.source_path),
+            "coherence": {
+                "azimuth_window": case.coherence_azimuth_window,
+                "estimator": case.coherence_estimator,
+                "range_window": case.coherence_range_window,
+            },
+            "create_offset": {
+                "azimuth_search": case.create_offset_azimuth_search,
+                "azimuth_start": case.create_offset_azimuth_start,
+                "azimuth_window": case.create_offset_azimuth_window,
+                "correlation_threshold": case.create_offset_correlation_threshold,
+                "range_search": case.create_offset_range_search,
+                "range_start": case.create_offset_range_start,
+                "range_window": case.create_offset_range_window,
+            },
+            "filter_flags": [
+                plan.spectral_filter_range,
+                plan.spectral_filter_azimuth,
+            ],
+            "pairs": [pair.name for pair in plan.pairs],
+            "polarization": case.polarization,
+            "radar_height": {
+                "path": str(case.radar_height),
+                "sha256": hashlib.sha256(case.radar_height.read_bytes()).hexdigest(),
+            },
+            "range_looks": case.range_looks,
+            "reference_date": plan.stack.reference_date,
+            "stack_digest": plan.stack.source_digest,
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        return hashlib.sha256(encoded).hexdigest()
+
     def test_executes_each_mli_once_then_each_pair_in_exact_core_order(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -345,6 +381,39 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
                     command_runner=_FakeGamma(),
                     progress_sink=lambda _: None,
                 )
+
+    def test_legacy_schema_one_output_remains_restart_compatible(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = self._plan(root)
+            run_gamma_interferograms(
+                plan, command_runner=_FakeGamma(), progress_sink=lambda _: None
+            )
+            manifest_path = plan.case.output_dir / "interferogram_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["schema_version"] = 1
+            for key in (
+                "backend",
+                "baseline_manifest_project_path",
+                "case_id",
+                "radar_height_project_path",
+                "registered_stack_project_path",
+            ):
+                manifest.pop(key)
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            provenance_path = plan.case.output_dir / "provenance.json"
+            provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+            provenance.clear()
+            provenance["input_signature"] = self._legacy_signature(plan)
+            provenance_path.write_text(json.dumps(provenance), encoding="utf-8")
+
+            fake = _FakeGamma()
+            summary = run_gamma_interferograms(
+                plan, command_runner=fake, progress_sink=lambda _: None
+            )
+            self.assertEqual(summary.status, "skipped")
+            self.assertEqual(fake.calls, [])
 
     def test_incomplete_existing_output_conflicts_instead_of_restarting(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

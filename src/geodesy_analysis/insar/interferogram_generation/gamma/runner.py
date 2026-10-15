@@ -13,7 +13,12 @@ from geodesy_analysis.common.progress import emit_progress
 from geodesy_analysis.io import atomic_output_directory
 
 from .models import GammaInterferogramPlan, InterferogramPair
-from .publication import ensure_nonempty, gamma_parameter, interferogram_input_signature
+from .publication import (
+    ensure_nonempty,
+    gamma_parameter,
+    interferogram_input_signature,
+    legacy_interferogram_input_signature,
+)
 
 _TASK = "ANALYSIS_GAMMA_INTERFEROGRAM"
 
@@ -68,13 +73,18 @@ def _read_existing(
         provenance = json.loads((output / "provenance.json").read_text(encoding="utf-8"))
         if not isinstance(manifest, dict) or not isinstance(provenance, dict):
             raise ValueError("interferogram manifest and provenance must be JSON objects")
-        if provenance.get("input_signature") != signature:
-            raise FileExistsError(
-                f"interferogram output was produced from different inputs: {output}"
-            )
         schema_version = manifest.get("schema_version")
         if schema_version not in {1, 2} or manifest.get("status") != "complete":
             raise ValueError("interferogram manifest is not a supported complete schema")
+        expected_signature = (
+            legacy_interferogram_input_signature(plan)
+            if schema_version == 1
+            else signature
+        )
+        if provenance.get("input_signature") != expected_signature:
+            raise FileExistsError(
+                f"interferogram output was produced from different inputs: {output}"
+            )
         if schema_version == 2:
             identities = {
                 "registered_stack_project_path": _project_path(
