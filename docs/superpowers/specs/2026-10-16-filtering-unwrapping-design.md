@@ -53,11 +53,22 @@ ANALYSIS/GAMMA/INTERFEROGRAM  → ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA
 相关项目 CFG、日志路径和 manifest 引用同步更新。仓库工作流不兼容性扫描旧目录；
 旧项目如需继续运行，应先执行明确的目录迁移或继续使用旧入口。
 
-标准目录不引入 `main`、`test` 或统一 `run_id`。一个方法默认发布一套正式结果。
-如果用户需要保留同一方法的多组输入或参数结果，可以在对应 CFG 中手动指定另一
-个 `output_dir`；框架不自动增加目录层级。无论输出目录如何命名，manifest 都要
-记录其直接上游 manifest、输入摘要、方法和参数，因此完整处理谱系由 manifest
-串联，而不是由路径推断。
+标准目录不引入 `main`、`test` 或统一 `run_id`。`output_dir` 是可选参数：用户
+没有填写时，程序根据处理阶段和所选方法自动生成标准目录；用户显式填写时，以
+手动指定的目录为准。自动映射为：
+
+```text
+nl_insar    → ANALYSIS/FILTERING/NL_INSAR
+gamma_bm3d  → ANALYSIS/FILTERING/GAMMA_BM3D
+gamma_adf   → ANALYSIS/FILTERING/GAMMA_ADF
+gamma_mcf   → ANALYSIS/UNWRAPPING/GAMMA_MCF
+```
+
+手动路径可以是项目根目录内的相对路径或绝对路径，并接受与自动目录不同的名称，
+用于保留同一方法的多组输入或参数结果；路径仍必须通过项目根目录边界检查。框架
+不会自动增加运行编号或额外目录层级。无论输出目录如何产生，manifest 都要记录
+其直接上游 manifest、输入摘要、方法和参数，因此完整处理谱系由 manifest 串联，
+而不是由路径推断。
 
 ## 3. 源码结构
 
@@ -102,11 +113,11 @@ src/geodesy_analysis/insar/
 
 ### 4.1 输入和选择
 
-滤波 CFG 必须显式提供：
+滤波 CFG 包含：
 
 - `interferogram_manifest`：状态为 `complete` 的上一阶段 manifest；
 - `method`：`nl_insar`、`gamma_bm3d` 或 `gamma_adf`；
-- `output_dir`：默认指向所选方法的标准目录；
+- `output_dir`：可选；缺省时按 `method` 自动选择标准目录，显式设置时覆盖默认值；
 - 方法专属参数。
 
 工作流只从 `interferogram_manifest.json` 取得干涉对、MLI、宽度、行数和
@@ -174,6 +185,9 @@ MCF CFG 必须显式提供一个 `filtering_manifest`，因此同一入口可以
 3. 掩膜尺寸与解缠网格一致；
 4. 参考点位于有效掩膜内。
 
+MCF 的 `output_dir` 同样可选：未填写时自动使用
+`ANALYSIS/UNWRAPPING/GAMMA_MCF`，显式填写时使用项目根目录内的手动路径。
+
 掩膜支持相干阈值自动生成和显式外部掩膜。参考点支持自动选择与手动指定；自动
 模式在最终掩膜内依据平均相干性选择，最终坐标和选择方式写入 provenance。
 
@@ -238,7 +252,8 @@ LOG/ANALYSIS/UNWRAPPING/GAMMA_MCF/
 - 失败日志保留到独立目录，输入和已发布的上游结果保持只读；
 - 现有输出的输入摘要、方法和参数摘要完全相同时返回 `skipped`；
 - 输出存在但 manifest 不完整、损坏或摘要不一致时明确报冲突，不静默覆盖；
-- 同一方法确需保留另一组运行时，用户通过 CFG 手动指定新的 `output_dir`。
+- 默认输出冲突时不自动生成 `run_id` 或编号目录；同一方法确需保留另一组运行时，
+  用户通过 CFG 手动指定新的 `output_dir`。
 
 ## 8. 验证策略
 
@@ -263,7 +278,8 @@ LOG/ANALYSIS/UNWRAPPING/GAMMA_MCF/
 1. 新目录不再把 NL-InSAR 错误归类到顶层 GAMMA；
 2. 三种滤波方法都从同一干涉图 manifest 生成统一产品角色和滤波 manifest；
 3. GAMMA MCF 只依据显式滤波 manifest 选择输入；
-4. 项目结构不引入强制 `run_id`，完整谱系可由 manifest 逐级追溯；
-5. Gansu 的既有基线、干涉图、CFG 和日志同步迁入阶段优先目录；
-6. Gansu 单对真实数据完成三种滤波及 MCF 对照；
-7. 旧入口仍可回退，且未提前实现大气改正、时序、通用可视化或其他解缠方法。
+4. `output_dir` 未设置时按阶段和方法自动生成，手动设置时覆盖默认值；
+5. 项目结构不引入强制或自动 `run_id`，完整谱系可由 manifest 逐级追溯；
+6. Gansu 的既有基线、干涉图、CFG 和日志同步迁入阶段优先目录；
+7. Gansu 单对真实数据完成三种滤波及 MCF 对照；
+8. 旧入口仍可回退，且未提前实现大气改正、时序、通用可视化或其他解缠方法。
