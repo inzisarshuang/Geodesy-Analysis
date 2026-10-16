@@ -28,6 +28,7 @@ class FilteringPlanTests(unittest.TestCase):
             mli_assets.append(
                 {"date": date, "data_path": f"MLI/{date}.mli", "parameter_path": f"MLI/{date}.mli.par"}
             )
+        (output / "MLI/ave_mli").write_bytes(b"a" * 24)
         pairs = []
         for name in ("20240131-20240212", "20231226-20240131"):
             pair = output / "PAIRS" / name / "pair.tflt"
@@ -39,6 +40,7 @@ class FilteringPlanTests(unittest.TestCase):
             "schema_version": schema,
             "status": status,
             "case_id": "S1/ASCENDING_128",
+            "average_mli_path": "MLI/ave_mli",
             "mli_assets": mli_assets,
             "pairs": pairs,
         }

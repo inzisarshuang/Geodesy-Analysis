@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from collections.abc import Callable, Sequence
@@ -779,6 +780,11 @@ def run_gamma_interferograms(
         log_dir = plan.case.case_root / "LOG/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA"
         _begin_logs(log_dir)
         try:
+            manifest_path = plan.case.output_dir / "interferogram_manifest.json"
+            existing.manifest.setdefault(
+                "scientific_manifest_digest",
+                hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+            )
             mli_assets, average_mli, pair_products, width = _existing_science_assets(
                 plan, existing.manifest
             )
@@ -812,7 +818,7 @@ def run_gamma_interferograms(
                 plan.case.output_dir / "provenance.json", existing.provenance
             )
             _write_json_atomic(
-                plan.case.output_dir / "interferogram_manifest.json", existing.manifest
+                manifest_path, existing.manifest
             )
         except BaseException:
             failed_logs = _preserve_failed_logs(log_dir)
@@ -957,6 +963,14 @@ def run_gamma_interferograms(
                 "stack_digest": plan.stack.source_digest,
                 "status": "complete",
             }
+            manifest["scientific_manifest_digest"] = hashlib.sha256(
+                (
+                    json.dumps(
+                        manifest, ensure_ascii=False, sort_keys=True, indent=2
+                    )
+                    + "\n"
+                ).encode("utf-8")
+            ).hexdigest()
             with atomic_output_directory(plan.case.visualization_dir) as visual_staging:
                 _render_quicklooks(
                     plan,

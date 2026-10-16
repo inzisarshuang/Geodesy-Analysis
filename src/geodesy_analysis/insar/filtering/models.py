@@ -90,6 +90,7 @@ class InterferogramManifest:
     schema_version: int
     case_id: str | None
     mli_assets: tuple[MLIAsset, ...]
+    average_mli: Path
     source_digest: str
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from collections.abc import Callable, Sequence
@@ -12,7 +13,12 @@ import numpy as np
 
 from geodesy_analysis.common.command import SubprocessCommandRunner
 from geodesy_analysis.common.progress import emit_progress
-from geodesy_analysis.io import atomic_output_directory
+from geodesy_analysis.insar.common.gamma_quicklooks import (
+    coherence_quicklook_command,
+    require_nonempty_quicklook,
+    wrapped_phase_quicklook_command,
+)
+from geodesy_analysis.io import atomic_output_directory, atomic_output_path
 
 from .methods.gamma.adf import adf_commands
 from .methods.gamma.bm3d import bm3d_commands
@@ -29,6 +35,13 @@ class FilteringRunSummary:
     method: str
     pair_count: int
     output_dir: Path
+
+
+@dataclass(frozen=True)
+class _ExistingFiltering:
+    summary: FilteringRunSummary
+    manifest: dict[str, object]
+    provenance: dict[str, object]
 
 
 def _event(sink: Callable[[str], object], **values: object) -> None:
@@ -78,7 +91,7 @@ def _published(output: Path, value: object, label: str, size: int) -> Path:
     return path
 
 
-def _read_existing(plan: FilteringPlan, signature: str) -> FilteringRunSummary | None:
+def _read_existing(plan: FilteringPlan, signature: str) -> _ExistingFiltering | None:
     output = plan.case.output_dir
     if not output.exists():
         return None
@@ -107,7 +120,11 @@ def _read_existing(plan: FilteringPlan, signature: str) -> FilteringRunSummary |
             _published(output, products.get("filtered_interferogram"), "filtered interferogram", complex_size)
             _published(output, products.get("filtered_coherence"), "filtered coherence", float_size)
         _published(output, manifest.get("mean_coherence_path"), "mean coherence", float_size)
-        return FilteringRunSummary("skipped", plan.case.method.value, len(pairs), output)
+        return _ExistingFiltering(
+            FilteringRunSummary("skipped", plan.case.method.value, len(pairs), output),
+            manifest,
+            provenance,
+        )
     except FileExistsError:
         raise
     except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
@@ -169,6 +186,204 @@ def _write_coherent_points(plan: FilteringPlan, mean: np.ndarray, staging: Path)
     return "coherent_points/points.csv"
 
 
+def _quicklook_names(plan: FilteringPlan) -> set[str]:
+    return {
+        *(f"{pair.name}.tflt.filt.bmp" for pair in plan.pairs),
+        *(f"{pair.name}.coh.filt.bmp" for pair in plan.pairs),
+    }
+
+
+def _validate_visualization_inventory(plan: FilteringPlan) -> None:
+    directory = plan.case.visualization_dir
+    if not directory.exists():
+        return
+    if not directory.is_dir() or directory.is_symlink():
+        raise FileExistsError(f"visualization output is not a directory: {directory}")
+    expected = _quicklook_names(plan)
+    unexpected = sorted(path.name for path in directory.iterdir() if path.name not in expected)
+    if unexpected:
+        raise FileExistsError(
+            f"visualization directory has unexpected entry: {directory / unexpected[0]}"
+        )
+
+
+def _pair_quicklook_paths(plan: FilteringPlan, pair_name: str) -> dict[str, str]:
+    directory = plan.case.visualization_dir
+    return {
+        "coherence_project_path": _project_path(
+            plan, directory / f"{pair_name}.coh.filt.bmp"
+        ),
+        "phase_project_path": _project_path(
+            plan, directory / f"{pair_name}.tflt.filt.bmp"
+        ),
+    }
+
+
+def _add_quicklook_metadata(
+    plan: FilteringPlan,
+    manifest: dict[str, object],
+    provenance: dict[str, object],
+) -> None:
+    directory = _project_path(plan, plan.case.visualization_dir)
+    manifest["visualization_dir_project_path"] = directory
+    for item in manifest["pairs"]:  # type: ignore[index]
+        item["quicklooks"] = _pair_quicklook_paths(plan, item["pair"])
+    provenance["visualization_dir_project_path"] = directory
+    provenance["quicklook_commands"] = {
+        "coherence": {
+            "background": (
+                None
+                if plan.case.method is FilteringMethod.NL_INSAR
+                else _project_path(plan, plan.manifest.average_mli)
+            ),
+            "color_map": "cc.cm",
+            "command": "rasdt_pwr",
+        },
+        "phase": {
+            "color_map": "rmg.cm",
+            "command": (
+                "rasdt_pwr"
+                if plan.case.method is FilteringMethod.NL_INSAR
+                else "rasmph"
+            ),
+        },
+    }
+
+
+def _quicklooks_complete(plan: FilteringPlan, manifest: dict[str, object]) -> bool:
+    if manifest.get("visualization_dir_project_path") != _project_path(
+        plan, plan.case.visualization_dir
+    ):
+        return False
+    pairs = manifest.get("pairs")
+    if not isinstance(pairs, list) or any(
+        not isinstance(item, dict)
+        or item.get("quicklooks") != _pair_quicklook_paths(plan, item.get("pair"))
+        for item in pairs
+    ):
+        return False
+    try:
+        for name in _quicklook_names(plan):
+            require_nonempty_quicklook(plan.case.visualization_dir / name, name)
+    except (OSError, RuntimeError):
+        return False
+    return True
+
+
+def _run_quicklook(
+    delegate,
+    command_factory,
+    destination: Path,
+    *,
+    cwd: Path,
+    log_dir: Path,
+    log_stem: str,
+    label: str,
+    atomic: bool,
+) -> None:
+    if destination.is_file() and destination.stat().st_size:
+        return
+
+    def execute(output: Path) -> None:
+        delegate.run(
+            command_factory(output),
+            cwd=cwd,
+            stdin_text=None,
+            stdout_path=log_dir / f"{log_stem}.stdout.log",
+            stderr_path=log_dir / f"{log_stem}.stderr.log",
+        )
+        require_nonempty_quicklook(output, label)
+
+    if atomic:
+        with atomic_output_path(destination) as temporary:
+            execute(temporary)
+    else:
+        execute(destination)
+
+
+def _render_quicklooks(
+    plan: FilteringPlan,
+    published: list[tuple[object, dict[str, Path]]],
+    *,
+    destination: Path,
+    delegate,
+    log_dir: Path,
+    atomic_files: bool,
+) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    nonlocal_mode = plan.case.method is FilteringMethod.NL_INSAR
+    background = None if nonlocal_mode else plan.manifest.average_mli
+    for pair, products in published:
+        _run_quicklook(
+            delegate,
+            lambda output, data=products["filtered_interferogram"]: (
+                wrapped_phase_quicklook_command(
+                    data,
+                    plan.width,
+                    output,
+                    nonlocal_mode=nonlocal_mode,
+                    line_start="0",
+                )
+            ),
+            destination / f"{pair.name}.tflt.filt.bmp",
+            cwd=destination,
+            log_dir=log_dir,
+            log_stem=f"{pair.name}.quicklook.phase",
+            label=f"filtered phase quicklook for {pair.name}",
+            atomic=atomic_files,
+        )
+        _run_quicklook(
+            delegate,
+            lambda output, data=products["filtered_coherence"]: (
+                coherence_quicklook_command(
+                    data, plan.width, output, background=background
+                )
+            ),
+            destination / f"{pair.name}.coh.filt.bmp",
+            cwd=destination,
+            log_dir=log_dir,
+            log_stem=f"{pair.name}.quicklook.coherence",
+            label=f"filtered coherence quicklook for {pair.name}",
+            atomic=atomic_files,
+        )
+
+
+def _existing_products(
+    plan: FilteringPlan, manifest: dict[str, object]
+) -> list[tuple[object, dict[str, Path]]]:
+    by_name = {item["pair"]: item for item in manifest["pairs"]}  # type: ignore[union-attr]
+    complex_size = plan.width * plan.lines * 8
+    float_size = plan.width * plan.lines * 4
+    return [
+        (
+            pair,
+            {
+                "filtered_interferogram": _published(
+                    plan.case.output_dir,
+                    by_name[pair.name]["products"]["filtered_interferogram"],
+                    "filtered interferogram",
+                    complex_size,
+                ),
+                "filtered_coherence": _published(
+                    plan.case.output_dir,
+                    by_name[pair.name]["products"]["filtered_coherence"],
+                    "filtered coherence",
+                    float_size,
+                ),
+            },
+        )
+        for pair in plan.pairs
+    ]
+
+
+def _write_json_atomic(path: Path, payload: dict[str, object]) -> None:
+    with atomic_output_path(path) as temporary:
+        temporary.write_text(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+
 def run_filtering(
     plan: FilteringPlan,
     *,
@@ -181,8 +396,75 @@ def run_filtering(
     signature = filtering_input_signature(plan)
     existing = _read_existing(plan, signature)
     if existing is not None:
-        _event(sink, event="batch_finished", status="skipped", stage="publish", total=existing.pair_count)
-        return existing
+        _validate_visualization_inventory(plan)
+        if _quicklooks_complete(plan, existing.manifest):
+            _event(
+                sink,
+                event="batch_finished",
+                status="skipped",
+                stage="publish",
+                total=existing.summary.pair_count,
+            )
+            return existing.summary
+        delegate = command_runner or SubprocessCommandRunner()
+        method_dir = plan.case.method.directory_name
+        log_dir = plan.case.case_root / "LOG" / "ANALYSIS" / "FILTERING" / method_dir
+        _begin_logs(log_dir)
+        try:
+            manifest_path = plan.case.output_dir / "filtering_manifest.json"
+            existing.manifest.setdefault(
+                "scientific_manifest_digest",
+                hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+            )
+            published = _existing_products(plan, existing.manifest)
+            if plan.case.visualization_dir.exists():
+                _render_quicklooks(
+                    plan,
+                    published,
+                    destination=plan.case.visualization_dir,
+                    delegate=delegate,
+                    log_dir=log_dir,
+                    atomic_files=True,
+                )
+            else:
+                with atomic_output_directory(plan.case.visualization_dir) as visual_staging:
+                    _render_quicklooks(
+                        plan,
+                        published,
+                        destination=visual_staging,
+                        delegate=delegate,
+                        log_dir=log_dir,
+                        atomic_files=False,
+                    )
+            _add_quicklook_metadata(plan, existing.manifest, existing.provenance)
+            _write_json_atomic(plan.case.output_dir / "provenance.json", existing.provenance)
+            _write_json_atomic(
+                manifest_path, existing.manifest
+            )
+        except BaseException:
+            failed = _preserve_failed_logs(log_dir)
+            _event(
+                sink,
+                event="batch_finished",
+                status="failed",
+                stage="failed",
+                total=existing.summary.pair_count,
+                failure_logs=str(failed),
+            )
+            raise
+        _event(
+            sink,
+            event="batch_finished",
+            status="repaired",
+            stage="publish",
+            total=existing.summary.pair_count,
+        )
+        return FilteringRunSummary(
+            "repaired",
+            existing.summary.method,
+            existing.summary.pair_count,
+            existing.summary.output_dir,
+        )
     delegate = command_runner or SubprocessCommandRunner()
     method_dir = plan.case.method.directory_name
     log_dir = plan.case.case_root / "LOG" / "ANALYSIS" / "FILTERING" / method_dir
@@ -213,7 +495,7 @@ def run_filtering(
             mean = _mean_coherence(plan, [item for _, item in published], staging)
             coherent_points = _write_coherent_points(plan, mean, staging)
             source_path = _project_path(plan, plan.manifest.source_path)
-            provenance = {
+            provenance: dict[str, object] = {
                 "case_id": plan.case.case_id,
                 "input_signature": signature,
                 "interferogram_manifest_project_path": source_path,
@@ -221,8 +503,7 @@ def run_filtering(
                 "method": plan.case.method.value,
                 "schema_version": 2,
             }
-            (staging / "provenance.json").write_text(json.dumps(provenance, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
-            manifest = {
+            manifest: dict[str, object] = {
                 "case_id": plan.case.case_id,
                 "coherent_points_path": coherent_points,
                 "grid": {"lines": plan.lines, "width": plan.width},
@@ -243,7 +524,34 @@ def run_filtering(
                 "schema_version": 2,
                 "status": "complete",
             }
-            (staging / "filtering_manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+            manifest["scientific_manifest_digest"] = hashlib.sha256(
+                (
+                    json.dumps(
+                        manifest, ensure_ascii=False, sort_keys=True, indent=2
+                    )
+                    + "\n"
+                ).encode("utf-8")
+            ).hexdigest()
+            with atomic_output_directory(plan.case.visualization_dir) as visual_staging:
+                _render_quicklooks(
+                    plan,
+                    published,
+                    destination=visual_staging,
+                    delegate=delegate,
+                    log_dir=log_dir,
+                    atomic_files=False,
+                )
+                _add_quicklook_metadata(plan, manifest, provenance)
+                (staging / "provenance.json").write_text(
+                    json.dumps(provenance, ensure_ascii=False, sort_keys=True, indent=2)
+                    + "\n",
+                    encoding="utf-8",
+                )
+                (staging / "filtering_manifest.json").write_text(
+                    json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2)
+                    + "\n",
+                    encoding="utf-8",
+                )
         _event(sink, event="batch_finished", status="complete", stage="publish", index=total, total=total)
         return FilteringRunSummary("complete", plan.case.method.value, len(plan.pairs), plan.case.output_dir)
     except BaseException:

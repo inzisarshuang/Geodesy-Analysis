@@ -79,6 +79,8 @@ def build_filtering_plan(case: FilteringCase) -> FilteringPlan:
         assets.append(asset)
         by_date[date] = asset
     assert shape is not None
+    average_mli = _asset(source.parent, payload.get("average_mli_path"), "average MLI")
+    _exact_size(average_mli, shape[0] * shape[1] * 4, "average MLI")
 
     raw_pairs = payload.get("pairs")
     if not isinstance(raw_pairs, list) or not raw_pairs:
@@ -110,12 +112,19 @@ def build_filtering_plan(case: FilteringCase) -> FilteringPlan:
             )
         )
     pairs.sort(key=lambda pair: pair.name)
+    scientific_digest = payload.get("scientific_manifest_digest")
+    if scientific_digest is not None and (
+        not isinstance(scientific_digest, str)
+        or re.fullmatch(r"[0-9a-f]{64}", scientific_digest) is None
+    ):
+        raise ValueError("interferogram manifest scientific digest is invalid")
     manifest = InterferogramManifest(
         source_path=source,
         schema_version=schema,
         case_id=case_id,
         mli_assets=tuple(sorted(assets, key=lambda item: item.date)),
-        source_digest=hashlib.sha256(raw).hexdigest(),
+        average_mli=average_mli,
+        source_digest=scientific_digest or hashlib.sha256(raw).hexdigest(),
     )
     return FilteringPlan(case=case, manifest=manifest, pairs=tuple(pairs), width=shape[0], lines=shape[1])
 
