@@ -56,8 +56,12 @@ Analysis 只读取 `registered_stack.json`，不扫描 PRE 文件夹猜测影像
   保存统一产品和日志；不引入 `main`、`test` 或强制 `run_id`。
 - `ANALYSIS/UNWRAPPING/GAMMA_MCF/` 只表示当前解缠方法；上游滤波方法记录在清单
   lineage 中，不继续嵌套到目录名。
+- `VISUALIZATION/INTERFEROGRAM_GENERATION/GAMMA/`、`VISUALIZATION/FILTERING/<METHOD>/`
+  和 `VISUALIZATION/UNWRAPPING/GAMMA_MCF/` 保存对应 Analysis runner 同步生成的
+  GAMMA DISP 原生质量检查 BMP；图片按阶段/方法平铺，不建立日期对子目录。
 
 新 writer 只发布 portable schema v2：同一清单拥有的资产使用清单相对路径，跨阶段
-引用使用明确命名的项目相对字段。迁移期 reader 仍接受 schema v1。Analysis 不拥有
-任何渲染目录或图像；Geodesy-Visualization 独立读取清单并发布全部渲染结果。本次
-契约更新不会迁移已有研究项目文件。
+引用使用明确命名的项目相对字段。迁移期 reader 仍接受 schema v1。Analysis 只拥有
+与科学命令同步生成的 GAMMA DISP 质检图，不依赖 Matplotlib、PyGMT 或
+Geodesy-Visualization。Geodesy-Visualization 独立负责地图排版、论文图和其他二次
+渲染。以后迁移去趋势、大气改正等阶段时沿用同一阶段自带原生质检图的规则。

@@ -56,8 +56,9 @@ Geodesy-Preprocessing 必须已经发布完整的 `registered_stack.json`。它�
 
 完成后检查 `interferogram_manifest.json`：状态应为 `complete`，日期和干涉对数量
 应与 dry-run 一致，清单列出的 `MLI/`、`PAIRS/<日期对>/pair.tflt` 和 `pair.cc`
-等文件均应非空。Analysis 不创建快视图或其他渲染内容；这些内容全部由
-Geodesy-Visualization 负责。
+等文件均应非空。同时检查 `visualization_dir`：逐景 MLI、`ave_mli`、差分相位和
+相干性 BMP 应平铺在同一目录。它们是本阶段通过 GAMMA DISP 同步生成的原生质检图；
+Geodesy-Visualization 仍负责 PyGMT 地图、论文图和其他二次渲染。
 
 ## 4. 滤波
 
@@ -78,6 +79,8 @@ Geodesy-Visualization 负责。
 手动指定新的 `output_dir`；程序不生成 `main`、`test` 或编号 `run_id`。三种方法
 统一发布 `pairs/<日期对>/pair.tflt.filt`、`pair.coh.filt`、`coh_ave.coh` 和
 `filtering_manifest.json`。
+每个方法的 `visualization_dir` 同时平铺保存滤波相位与相干性 BMP。未填写时按方法
+自动生成标准路径；手动设置时必须位于当前 case 且不能与输入或科学输出重叠。
 
 ## 5. GAMMA MCF 解缠
 
@@ -96,6 +99,8 @@ BM3D 还是 ADF 由 manifest lineage 记录，不叠加到目录层级。
 `reference_mode=auto` 在最终掩膜内选择平均相干性最高的有限像元；`manual` 使用
 零起始 `reference_range`、`reference_azimuth`，越界或被掩膜时停止。默认输出为
 `ANALYSIS/UNWRAPPING/GAMMA_MCF`，也可显式覆盖到项目根内的其他目录。
+解缠 BMP 由同一命令写入 `VISUALIZATION/UNWRAPPING/GAMMA_MCF/`；`final.mask.bmp`
+是 MCF 计算输入，只保留在 Analysis 科学目录。
 
 ## 6. 日志与重跑
 

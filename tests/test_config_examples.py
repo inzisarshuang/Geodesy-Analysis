@@ -67,16 +67,26 @@ class ConfigExampleTests(unittest.TestCase):
                 interferogram.output_dir,
                 root / "S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA",
             )
+            self.assertEqual(
+                interferogram.visualization_dir,
+                root / "S1/ASCENDING_128/VISUALIZATION/INTERFEROGRAM_GENERATION/GAMMA",
+            )
             self.assertFalse((root / "S1/ASCENDING_128/LOG").exists())
 
-    def test_examples_document_owned_layout_without_rendering(self) -> None:
+    def test_examples_document_stage_owned_flat_quicklooks(self) -> None:
         baseline = (self.repository / "config_examples/gamma_baseline.cfg").read_text(
             encoding="utf-8"
         )
         interferogram = (
             self.repository / "config_examples/gamma_interferogram.cfg"
         ).read_text(encoding="utf-8")
-        combined = baseline + interferogram
+        filtering = (
+            self.repository / "config_examples/insar_filtering.cfg"
+        ).read_text(encoding="utf-8")
+        mcf = (
+            self.repository / "config_examples/gamma_mcf_unwrapping.cfg"
+        ).read_text(encoding="utf-8")
+        combined = baseline + interferogram + filtering + mcf
 
         self.assertIn("case_root = S1/ASCENDING_128", baseline)
         self.assertIn("RSLC_SUBSET", combined)
@@ -87,9 +97,27 @@ class ConfigExampleTests(unittest.TestCase):
         )
         self.assertIn("output_dir/MLI", interferogram)
         self.assertIn("output_dir/PAIRS", interferogram)
-        self.assertNotIn("quicklook", combined.lower())
+        self.assertIn(
+            "visualization_dir = S1/ASCENDING_128/VISUALIZATION/INTERFEROGRAM_GENERATION/GAMMA",
+            interferogram,
+        )
+        for method in ("NL_INSAR", "GAMMA_BM3D", "GAMMA_ADF"):
+            self.assertIn(
+                f"visualization_dir = S1/ASCENDING_128/VISUALIZATION/FILTERING/{method}",
+                filtering,
+            )
+        self.assertIn(
+            "visualization_dir = S1/ASCENDING_128/VISUALIZATION/UNWRAPPING/GAMMA_MCF",
+            mcf,
+        )
+        self.assertIn(".mli.bmp", interferogram)
+        self.assertIn(".tflt.bmp", interferogram)
+        self.assertIn(".cc.bmp", interferogram)
+        self.assertIn(".tflt.filt.bmp", filtering)
+        self.assertIn(".coh.filt.bmp", filtering)
+        self.assertIn(".tflt.filt.unw.bmp", mcf)
+        self.assertNotRegex(combined, r"VISUALIZATION/[^\n#]*/pairs/")
         self.assertNotIn("PNG", combined)
-        self.assertNotIn("FIGURES", combined)
 
 
 if __name__ == "__main__":

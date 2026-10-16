@@ -39,6 +39,9 @@ Geodesy-Analysis/
 4. `geodesy-analysis-filtering` 从干涉清单选择方法并发布统一滤波清单。
 5. `geodesy-analysis-gamma-mcf` 从一个显式滤波清单生成掩膜并执行 MCF 解缠。
 
+第 3–5 步在同一个 Analysis 命令中同步调用 GAMMA DISP，分别生成强度、相位、
+相干性、滤波和解缠 BMP 质检图；不需要独立的可视化 CFG 或第二次命令。
+
 详细操作见 [GAMMA InSAR workflow](docs/workflows/gamma_insar.md)。
 
 ## 3. Dependencies and Installation / 环境与安装
@@ -93,11 +96,15 @@ geodesy-analysis-gamma-mcf --config /absolute/PROJECT/config/analysis/gamma_mcf_
 - 滤波日志：`<case_root>/LOG/ANALYSIS/FILTERING/<METHOD>/`
 - 解缠结果：`<case_root>/ANALYSIS/UNWRAPPING/GAMMA_MCF/`
 - 解缠日志：`<case_root>/LOG/ANALYSIS/UNWRAPPING/GAMMA_MCF/`
+- 干涉质检图：`<case_root>/VISUALIZATION/INTERFEROGRAM_GENERATION/GAMMA/`
+- 滤波质检图：`<case_root>/VISUALIZATION/FILTERING/<METHOD>/`
+- 解缠质检图：`<case_root>/VISUALIZATION/UNWRAPPING/GAMMA_MCF/`
 
 只有清单和所有核心文件通过检查后才发布正式目录。相同输入可安全跳过；输入或参数
 变化时停止并要求用户处理旧结果，不静默覆盖。新写出的 Analysis 清单均为 portable
-schema v2；迁移期读端继续接受 schema v1。Analysis 不创建渲染产物，所有图像由
-Geodesy-Visualization 发布。
+schema v2；迁移期读端继续接受 schema v1。上述 GAMMA DISP BMP 是各科学阶段拥有的
+原生质量检查图，按阶段/方法平铺。Geodesy-Visualization 继续负责基线网络图、
+PyGMT 地图、论文图和其他二次渲染。
 
 ## 6. Current Scope / 当前范围
 
