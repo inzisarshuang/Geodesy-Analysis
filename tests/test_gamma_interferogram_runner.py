@@ -121,7 +121,7 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
             encoding="utf-8",
         )
         digest = hashlib.sha256(stack.read_bytes()).hexdigest()
-        baseline_dir = root / "S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE"
+        baseline_dir = root / "S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA"
         baseline_dir.mkdir(parents=True)
         (baseline_dir / "baseline_select_SBAS").write_text(
             "20231226 20240107 4 12\n20231214 20231226 -10 12\n",
@@ -172,7 +172,7 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
             coherence_range_window=7,
             coherence_azimuth_window=9,
             coherence_estimator=2,
-            output_dir=root / "S1/ASCENDING_128/ANALYSIS/GAMMA/INTERFEROGRAM",
+            output_dir=root / "S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA",
         )
         return build_gamma_interferogram_plan(case)
 
@@ -289,7 +289,7 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
             )
             self.assertEqual(
                 manifest["baseline_manifest_project_path"],
-                "S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE/baseline_manifest.json",
+                "S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA/baseline_manifest.json",
             )
             self.assertEqual(
                 manifest["radar_height_project_path"],
@@ -347,8 +347,11 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
                     )
                 self.assertFalse(plan.case.output_dir.exists())
                 failures = list(
-                    (root / "S1/ASCENDING_128/LOG/ANALYSIS/GAMMA").glob(
-                        "INTERFEROGRAM.failed-logs-*"
+                    (
+                        root
+                        / "S1/ASCENDING_128/LOG/ANALYSIS/INTERFEROGRAM_GENERATION"
+                    ).glob(
+                        "GAMMA.failed-logs-*"
                     )
                 )
                 self.assertEqual(len(failures), 1)
@@ -456,7 +459,7 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
             ),
             (
                 "baseline_manifest_project_path",
-                "S1/DESCENDING_135/ANALYSIS/GAMMA/BASELINE/baseline_manifest.json",
+                "S1/DESCENDING_135/ANALYSIS/BASELINE_SELECTION/GAMMA/baseline_manifest.json",
             ),
             (
                 "radar_height_project_path",

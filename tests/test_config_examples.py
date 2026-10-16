@@ -33,7 +33,7 @@ class ConfigExampleTests(unittest.TestCase):
     def _inputs(self, root: Path) -> None:
         for relative in (
             "S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json",
-            "S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE/baseline_manifest.json",
+            "S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA/baseline_manifest.json",
             "S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/reference.hgt_sim",
         ):
             path = root / relative
@@ -59,13 +59,13 @@ class ConfigExampleTests(unittest.TestCase):
             self.assertIn("RSLC_SUBSET", baseline.registered_stack.parts)
             self.assertEqual(
                 baseline.output_dir,
-                root / "S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE",
+                root / "S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA",
             )
             self.assertEqual(interferogram.name, "main")
             self.assertEqual(interferogram.case_id, "S1/ASCENDING_128")
             self.assertEqual(
                 interferogram.output_dir,
-                root / "S1/ASCENDING_128/ANALYSIS/GAMMA/INTERFEROGRAM",
+                root / "S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA",
             )
             self.assertFalse((root / "S1/ASCENDING_128/LOG").exists())
 
@@ -80,9 +80,9 @@ class ConfigExampleTests(unittest.TestCase):
 
         self.assertIn("case_root = S1/ASCENDING_128", baseline)
         self.assertIn("RSLC_SUBSET", combined)
-        self.assertIn("S1/ASCENDING_128/LOG/ANALYSIS/GAMMA/BASELINE", baseline)
+        self.assertIn("S1/ASCENDING_128/LOG/ANALYSIS/BASELINE_SELECTION/GAMMA", baseline)
         self.assertIn(
-            "S1/ASCENDING_128/LOG/ANALYSIS/GAMMA/INTERFEROGRAM",
+            "S1/ASCENDING_128/LOG/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA",
             interferogram,
         )
         self.assertIn("output_dir/MLI", interferogram)

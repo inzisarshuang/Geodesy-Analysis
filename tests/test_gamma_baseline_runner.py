@@ -85,7 +85,7 @@ class GammaBaselineRunnerTests(unittest.TestCase):
             network_type="SBAS",
             max_perpendicular_baseline=300.0,
             max_temporal_baseline=100.0,
-            output_dir=root / "S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE",
+            output_dir=root / "S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA",
         )
         return build_gamma_baseline_plan(case)
 
@@ -175,7 +175,7 @@ class GammaBaselineRunnerTests(unittest.TestCase):
             )
             log = (
                 root
-                / "S1/ASCENDING_128/LOG/ANALYSIS/GAMMA/BASELINE/base_calc.stdout.log"
+                / "S1/ASCENDING_128/LOG/ANALYSIS/BASELINE_SELECTION/GAMMA/base_calc.stdout.log"
             )
             self.assertTrue(log.is_file())
 
@@ -193,8 +193,8 @@ class GammaBaselineRunnerTests(unittest.TestCase):
                 )
             self.assertFalse(plan.case.output_dir.exists())
             failures = list(
-                (root / "S1/ASCENDING_128/LOG/ANALYSIS/GAMMA").glob(
-                    "BASELINE.failed-logs-*"
+                (root / "S1/ASCENDING_128/LOG/ANALYSIS/BASELINE_SELECTION").glob(
+                    "GAMMA.failed-logs-*"
                 )
             )
             self.assertEqual(len(failures), 1)

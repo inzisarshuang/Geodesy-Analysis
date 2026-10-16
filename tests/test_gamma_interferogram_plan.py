@@ -74,7 +74,7 @@ class GammaInterferogramPlanTests(unittest.TestCase):
         network_path: str = "baseline_select_SBAS",
         schema_version: int = 2,
     ) -> Path:
-        directory = root / "S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE"
+        directory = root / "S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA"
         directory.mkdir(parents=True)
         if network_path != "missing":
             (directory / network_path).write_text(network_text, encoding="utf-8")
@@ -136,7 +136,7 @@ class GammaInterferogramPlanTests(unittest.TestCase):
             coherence_range_window=5,
             coherence_azimuth_window=5,
             coherence_estimator=2,
-            output_dir=root / "S1/ASCENDING_128/ANALYSIS/GAMMA/INTERFEROGRAM",
+            output_dir=root / "S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA",
         )
 
     def test_preserves_network_order_and_resolves_sentinel1_auto_off(self) -> None:

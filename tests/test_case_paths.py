@@ -113,15 +113,17 @@ class AnalysisCasePathTests(unittest.TestCase):
             paths = bind_analysis_case(project, "main", "S1/ASCENDING_128")
 
             output = resolve_case_output(
-                paths, "S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE"
+                paths, "S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA"
             )
-            self.assertEqual(output, case / "ANALYSIS" / "GAMMA" / "BASELINE")
+            self.assertEqual(
+                output, case / "ANALYSIS" / "BASELINE_SELECTION" / "GAMMA"
+            )
             self.assertFalse(output.exists())
 
             (case / "ANALYSIS").symlink_to(outside, target_is_directory=True)
             with self.assertRaisesRegex(ValueError, "case output.*case root"):
                 resolve_case_output(
-                    paths, "S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE"
+                    paths, "S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA"
                 )
 
 

@@ -18,7 +18,7 @@ class GammaInterferogramConfigTests(unittest.TestCase):
     def _inputs(self, root: Path) -> None:
         for relative in (
             "S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json",
-            "S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE/baseline_manifest.json",
+            "S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA/baseline_manifest.json",
             "S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/reference.hgt_sim",
         ):
             path = root / relative
@@ -39,13 +39,13 @@ root = {root}
 [case:ascending]
 case_root = S1/ASCENDING_128
 registered_stack = S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json
-baseline_manifest = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE/baseline_manifest.json
+baseline_manifest = S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA/baseline_manifest.json
 polarization = vv
 range_looks = 10
 azimuth_looks = 2
 radar_height = S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/reference.hgt_sim
 spectral_filter = auto
-output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/INTERFEROGRAM
+output_dir = S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA
 """
 
     def test_loads_required_values_and_legacy_advanced_defaults(self) -> None:
@@ -80,7 +80,7 @@ output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/INTERFEROGRAM
             self.assertEqual(case.coherence_estimator, 2)
             self.assertEqual(
                 case.output_dir,
-                (root / "S1/ASCENDING_128/ANALYSIS/GAMMA/INTERFEROGRAM").resolve(),
+                (root / "S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA").resolve(),
             )
 
     def test_case_values_override_defaults_and_modes_are_normalized(self) -> None:
@@ -110,11 +110,11 @@ coherence_estimator = 1
 [case:ascending]
 case_root = S1/ASCENDING_128
 registered_stack = S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json
-baseline_manifest = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE/baseline_manifest.json
+baseline_manifest = S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA/baseline_manifest.json
 polarization = vv
 radar_height = S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/reference.hgt_sim
 spectral_filter = OFF
-output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/INTERFEROGRAM
+output_dir = S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA
 """,
             )
             (case,) = load_gamma_interferogram_config(config)
@@ -146,8 +146,8 @@ output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/INTERFEROGRAM
             ("azimuth_looks = 2", "azimuth_looks = one", "positive integer"),
             ("spectral_filter = auto", "spectral_filter = maybe", "auto, on, or off"),
             (
-                "output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/INTERFEROGRAM",
-                "output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/INTERFEROGRAM\nsurprise = 1",
+                "output_dir = S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA",
+                "output_dir = S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA\nsurprise = 1",
                 "unknown key",
             ),
         )
@@ -204,7 +204,7 @@ coherence_estimator = 2
                 ),
                 (
                     "baseline_manifest",
-                    "S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE/baseline_manifest.json",
+                    "S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA/baseline_manifest.json",
                 ),
                 (
                     "radar_height",
@@ -222,8 +222,8 @@ coherence_estimator = 2
         replacements = (
             ("case_root = S1/ASCENDING_128\n", "", "missing keys.*case_root"),
             (
-                "baseline_manifest = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE/baseline_manifest.json",
-                "baseline_manifest = S1/DESCENDING_135/ANALYSIS/GAMMA/BASELINE/baseline_manifest.json",
+                "baseline_manifest = S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA/baseline_manifest.json",
+                "baseline_manifest = S1/DESCENDING_135/ANALYSIS/BASELINE_SELECTION/GAMMA/baseline_manifest.json",
                 "case input.*case root",
             ),
             (
@@ -232,7 +232,7 @@ coherence_estimator = 2
                 "case input.*case root",
             ),
             (
-                "output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/INTERFEROGRAM",
+                "output_dir = S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA",
                 "output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/OTHER",
                 "canonical interferogram output",
             ),

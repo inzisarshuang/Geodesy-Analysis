@@ -203,7 +203,7 @@ def run_gamma_baseline(
         )
         return existing
 
-    log_dir = plan.case.case_root / "LOG/ANALYSIS/GAMMA/BASELINE"
+    log_dir = plan.case.case_root / "LOG/ANALYSIS/BASELINE_SELECTION/GAMMA"
     _begin_logs(log_dir)
     stdout_log = log_dir / "base_calc.stdout.log"
     stderr_log = log_dir / "base_calc.stderr.log"

@@ -56,7 +56,7 @@ case_root = S1/ASCENDING_128
 registered_stack = S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json
 network_type = psi
 max_temporal_baseline = 40
-output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE
+output_dir = S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA
 """,
             )
             (case,) = load_gamma_baseline_config(config)
@@ -77,7 +77,7 @@ output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE
             )
             self.assertEqual(
                 case.output_dir,
-                (root / "S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE").resolve(),
+                (root / "S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA").resolve(),
             )
 
     def test_accepts_absolute_project_confined_paths_and_normalizes_modes(self) -> None:
@@ -95,7 +95,7 @@ polarization = vv
 network_type = {mode}
 max_perpendicular_baseline = 250
 max_temporal_baseline = 80
-output_dir = {root / 'S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE'}
+output_dir = {root / 'S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA'}
 """
                 )
             config = self._write(
@@ -112,8 +112,8 @@ output_dir = {root / 'S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE'}
             ("max_temporal_baseline = 100", "max_temporal_baseline = nan", "positive finite"),
             ("network_type = SBAS", "network_type = dense", "DSI, SBAS, or PSI"),
             (
-                "output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE",
-                "output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE\nsurprise = 1",
+                "output_dir = S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA",
+                "output_dir = S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA\nsurprise = 1",
                 "unknown key",
             ),
         )
@@ -131,7 +131,7 @@ polarization = VV
 network_type = SBAS
 max_perpendicular_baseline = 300
 max_temporal_baseline = 100
-output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE
+output_dir = S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA
 """.replace(original, replacement)
                 config = self._write(
                     root,
@@ -155,7 +155,7 @@ polarization = VV
 network_type = SBAS
 max_perpendicular_baseline = 300
 max_temporal_baseline = 100
-output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE
+output_dir = S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA
 """,
             )
             with self.assertRaisesRegex(ValueError, "unsafe or empty case name"):
@@ -192,7 +192,7 @@ polarization = VV
 network_type = SBAS
 max_perpendicular_baseline = 300
 max_temporal_baseline = 100
-output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE
+output_dir = S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA
 """
         replacements = (
             ("case_root = S1/ASCENDING_128\n", "", "missing keys.*case_root"),
@@ -203,7 +203,7 @@ output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE
                 "case input.*case root",
             ),
             (
-                "output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE",
+                "output_dir = S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA",
                 "output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/OTHER",
                 "canonical baseline output",
             ),
@@ -235,7 +235,7 @@ root = {root}
 case_root = S1/ASCENDING_128
 registered_stack = S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json
 polarization = VV
-output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE
+output_dir = S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA
 """,
             )
             with self.assertRaisesRegex(ValueError, "case output.*case root"):
@@ -257,7 +257,7 @@ polarization = VV
 network_type = SBAS
 max_perpendicular_baseline = 300
 max_temporal_baseline = 100
-output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE
+output_dir = S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA
 [case:b]
 case_root = S1/ASCENDING_128
 registered_stack = {manifest}
@@ -265,7 +265,7 @@ polarization = VV
 network_type = SBAS
 max_perpendicular_baseline = 300
 max_temporal_baseline = 100
-output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE
+output_dir = S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA
 """,
             )
             cases = load_gamma_baseline_config(config)

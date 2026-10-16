@@ -512,7 +512,7 @@ def run_gamma_interferograms(
         )
         return existing
     delegate = command_runner or SubprocessCommandRunner()
-    log_dir = plan.case.case_root / "LOG/ANALYSIS/GAMMA/INTERFEROGRAM"
+    log_dir = plan.case.case_root / "LOG/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA"
     _begin_logs(log_dir)
     total = len(plan.stack.assets) + len(plan.pairs) + 2
     _event(progress_sink, event="batch_started", status="start", total=total, stage="prepare")

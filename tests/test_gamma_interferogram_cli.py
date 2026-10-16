@@ -54,7 +54,7 @@ class GammaInterferogramCliTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        baseline_dir = root / "S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE"
+        baseline_dir = root / "S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA"
         baseline_dir.mkdir(parents=True)
         (baseline_dir / "baseline_select_SBAS").write_text(
             "20231214 20231226 5 12\n", encoding="utf-8"
@@ -94,13 +94,13 @@ root = {root}
 [case:ascending]
 case_root = S1/ASCENDING_128
 registered_stack = S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json
-baseline_manifest = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE/baseline_manifest.json
+baseline_manifest = S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA/baseline_manifest.json
 polarization = VV
 range_looks = 10
 azimuth_looks = 2
 radar_height = S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/20231226.hgt_sim
 spectral_filter = auto
-output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/INTERFEROGRAM
+output_dir = S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA
 """,
             encoding="utf-8",
         )
@@ -131,7 +131,7 @@ output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/INTERFEROGRAM
                 str(root / "S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/20231226.hgt_sim"),
             )
             self.assertFalse(
-                (root / "S1/ASCENDING_128/ANALYSIS/GAMMA/INTERFEROGRAM").exists()
+                (root / "S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA").exists()
             )
             self.assertFalse((root / "S1/ASCENDING_128/LOG").exists())
 

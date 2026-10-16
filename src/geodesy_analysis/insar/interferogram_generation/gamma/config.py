@@ -174,7 +174,7 @@ def load_gamma_interferogram_config(path: Path) -> tuple[GammaInterferogramCase,
             )
         baseline_manifest = resolve_case_input(paths, values["baseline_manifest"])
         expected_baseline = (
-            paths.case_root / "ANALYSIS/GAMMA/BASELINE/baseline_manifest.json"
+            paths.case_root / "ANALYSIS/BASELINE_SELECTION/GAMMA/baseline_manifest.json"
         ).resolve()
         if baseline_manifest != expected_baseline:
             raise ValueError(
@@ -191,7 +191,7 @@ def load_gamma_interferogram_config(path: Path) -> tuple[GammaInterferogramCase,
             ) from error
         output_dir = resolve_case_output(paths, values["output_dir"])
         expected_output = (
-            paths.case_root / "ANALYSIS/GAMMA/INTERFEROGRAM"
+            paths.case_root / "ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA"
         ).resolve()
         if output_dir != expected_output:
             raise ValueError(

@@ -61,8 +61,8 @@ Geodesy-Visualization 负责。
 
 ## 4. 日志与重跑
 
-基线日志位于 `S1/ASCENDING_128/LOG/ANALYSIS/GAMMA/BASELINE/`，干涉日志位于
-`S1/ASCENDING_128/LOG/ANALYSIS/GAMMA/INTERFEROGRAM/`。失败日志目录会改名为
+基线日志位于 `S1/ASCENDING_128/LOG/ANALYSIS/BASELINE_SELECTION/GAMMA/`，干涉日志位于
+`S1/ASCENDING_128/LOG/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA/`。失败日志目录会改名为
 `BASELINE.failed-logs-N` 或 `INTERFEROGRAM.failed-logs-N`，终端报错会给出位置。
 
 相同输入和参数且结果完整时命令返回 `skipped`。已有目录不完整或来源、参数发生

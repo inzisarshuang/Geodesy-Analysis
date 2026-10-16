@@ -64,7 +64,7 @@ polarization = VV
 network_type = SBAS
 max_perpendicular_baseline = 300
 max_temporal_baseline = 40
-output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE
+output_dir = S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA
 """,
             encoding="utf-8",
         )

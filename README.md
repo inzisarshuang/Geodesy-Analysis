@@ -74,11 +74,11 @@ geodesy-analysis-gamma-interferogram --config /absolute/PROJECT/config/analysis/
 ## 5. Outputs and Logs / 结果与日志
 
 - PRE 输入：`<case_root>/PRE/GAMMA/RSLC_SUBSET/registered_stack.json`
-- 基线结果：`<case_root>/ANALYSIS/GAMMA/BASELINE/`
-- 干涉结果：`<case_root>/ANALYSIS/GAMMA/INTERFEROGRAM/`，内部使用 `MLI/` 与
+- 基线结果：`<case_root>/ANALYSIS/BASELINE_SELECTION/GAMMA/`
+- 干涉结果：`<case_root>/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA/`，内部使用 `MLI/` 与
   `PAIRS/<日期对>/`
-- 基线日志：`<case_root>/LOG/ANALYSIS/GAMMA/BASELINE/`
-- 干涉日志：`<case_root>/LOG/ANALYSIS/GAMMA/INTERFEROGRAM/`
+- 基线日志：`<case_root>/LOG/ANALYSIS/BASELINE_SELECTION/GAMMA/`
+- 干涉日志：`<case_root>/LOG/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA/`
 
 只有清单和所有核心文件通过检查后才发布正式目录。相同输入可安全跳过；输入或参数
 变化时停止并要求用户处理旧结果，不静默覆盖。新写出的 Analysis 清单均为 portable

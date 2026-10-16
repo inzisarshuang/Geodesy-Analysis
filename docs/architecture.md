@@ -46,9 +46,9 @@ Analysis 只读取 `registered_stack.json`，不扫描 PRE 文件夹猜测影像
 当前 GAMMA 契约固定使用：
 
 - `PRE/GAMMA/RSLC_SUBSET/registered_stack.json` 作为 Analysis 输入；
-- `ANALYSIS/GAMMA/BASELINE/` 与 `ANALYSIS/GAMMA/INTERFEROGRAM/` 作为科学输出；
+- `ANALYSIS/BASELINE_SELECTION/GAMMA/` 与 `ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA/` 作为科学输出；
 - `INTERFEROGRAM/MLI/` 与 `INTERFEROGRAM/PAIRS/<日期对>/` 组织自有资产；
-- `LOG/ANALYSIS/GAMMA/BASELINE/` 与 `LOG/ANALYSIS/GAMMA/INTERFEROGRAM/` 保存日志。
+- `LOG/ANALYSIS/BASELINE_SELECTION/GAMMA/` 与 `LOG/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA/` 保存日志。
 
 新 writer 只发布 portable schema v2：同一清单拥有的资产使用清单相对路径，跨阶段
 引用使用明确命名的项目相对字段。迁移期 reader 仍接受 schema v1。Analysis 不拥有

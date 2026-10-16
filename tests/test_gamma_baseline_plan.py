@@ -63,7 +63,7 @@ class GammaBaselinePlanTests(unittest.TestCase):
             network_type=mode,
             max_perpendicular_baseline=300.0,
             max_temporal_baseline=100.0,
-            output_dir=root / "S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE",
+            output_dir=root / "S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA",
         )
 
     def test_builds_deterministic_inventory_from_manifest_reference(self) -> None:

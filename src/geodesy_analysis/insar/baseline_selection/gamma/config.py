@@ -132,7 +132,7 @@ def load_gamma_baseline_config(path: Path) -> tuple[GammaBaselineCase, ...]:
             )
         output_dir = resolve_case_output(paths, values["output_dir"])
         expected_output = (
-            paths.case_root / "ANALYSIS" / "GAMMA" / "BASELINE"
+            paths.case_root / "ANALYSIS" / "BASELINE_SELECTION" / "GAMMA"
         ).resolve()
         if output_dir != expected_output:
             raise ValueError(
