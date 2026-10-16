@@ -79,11 +79,30 @@ Geodesy-Visualization 负责。
 统一发布 `pairs/<日期对>/pair.tflt.filt`、`pair.coh.filt`、`coh_ave.coh` 和
 `filtering_manifest.json`。
 
-## 5. 日志与重跑
+## 5. GAMMA MCF 解缠
+
+复制 `config_examples/gamma_mcf_unwrapping.cfg`，并显式选择一个已完成的
+`filtering_manifest.json`。解缠目录固定表达方法 `GAMMA_MCF`，上游是 NL-InSAR、
+BM3D 还是 ADF 由 manifest lineage 记录，不叠加到目录层级。
+
+```bash
+/home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-mcf \
+  --config /absolute/PROJECT/config/analysis/gamma_mcf_unwrapping.cfg --dry-run
+
+/home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-mcf \
+  --config /absolute/PROJECT/config/analysis/gamma_mcf_unwrapping.cfg --case main
+```
+
+`reference_mode=auto` 在最终掩膜内选择平均相干性最高的有限像元；`manual` 使用
+零起始 `reference_range`、`reference_azimuth`，越界或被掩膜时停止。默认输出为
+`ANALYSIS/UNWRAPPING/GAMMA_MCF`，也可显式覆盖到项目根内的其他目录。
+
+## 6. 日志与重跑
 
 基线日志位于 `S1/ASCENDING_128/LOG/ANALYSIS/BASELINE_SELECTION/GAMMA/`，干涉日志位于
 `S1/ASCENDING_128/LOG/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA/`，滤波日志位于
-`S1/ASCENDING_128/LOG/ANALYSIS/FILTERING/<METHOD>/`。失败日志目录会追加
+`S1/ASCENDING_128/LOG/ANALYSIS/FILTERING/<METHOD>/`，解缠日志位于
+`S1/ASCENDING_128/LOG/ANALYSIS/UNWRAPPING/GAMMA_MCF/`。失败日志目录会追加
 `failed-logs-N`，终端报错会给出位置。
 
 相同输入和参数且结果完整时命令返回 `skipped`。已有目录不完整或来源、参数发生
@@ -93,7 +112,7 @@ Geodesy-Visualization 负责。
 项目相对路径；迁移期仍能读取已有 schema v1 基线清单。本次代码变更不会移动、
 复制或删除已有研究项目数据。
 
-## 6. 当前终点
+## 7. 当前终点
 
-当前链条止于三种方法的统一滤波清单。解缠、大气改正和时序分析属于接下来
+当前链条止于 GAMMA MCF 解缠清单。大气改正和时序分析属于接下来
 的 Analysis 阶段，不应把本流程的完成误解为完整 InSAR 反演已经完成。

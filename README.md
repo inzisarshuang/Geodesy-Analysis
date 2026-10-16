@@ -6,7 +6,7 @@ time-series analysis.
 
 本仓库负责传感器预处理之后的科学分析。目前已建立从配准 RSLC 到基线网络、差分
 干涉图和相干性的正式 GAMMA 工作流，并支持 NL-InSAR、GAMMA BM3D 与 GAMMA ADF
-三种清单驱动滤波方法；解缠和时序模块按后续阶段继续迁移。
+三种清单驱动滤波方法以及 GAMMA MCF 解缠；大气改正和时序模块按后续阶段继续迁移。
 
 ## 1. Project Structure / 项目结构
 
@@ -17,7 +17,8 @@ Geodesy-Analysis/
 │   └── insar/
 │       ├── baseline_selection/         # 基线网络计算与选择
 │       ├── interferogram_generation/   # MLI、差分干涉图与相干性
-│       └── filtering/                  # NL-InSAR、GAMMA BM3D、GAMMA ADF
+│       ├── filtering/                  # NL-InSAR、GAMMA BM3D、GAMMA ADF
+│       └── unwrapping/gamma/mcf/       # GAMMA MCF 解缠
 ├── config_examples/                    # 完整注释的正式 CFG 示例
 ├── docs/
 │   ├── architecture.md                 # 仓库边界和模块职责
@@ -36,6 +37,7 @@ Geodesy-Analysis/
    Geodesy-Visualization，在 `envPlot` 中运行。
 3. `geodesy-analysis-gamma-interferogram` 按网络生成 MLI、差分干涉图和相干性。
 4. `geodesy-analysis-filtering` 从干涉清单选择方法并发布统一滤波清单。
+5. `geodesy-analysis-gamma-mcf` 从一个显式滤波清单生成掩膜并执行 MCF 解缠。
 
 详细操作见 [GAMMA InSAR workflow](docs/workflows/gamma_insar.md)。
 
@@ -56,6 +58,7 @@ Geodesy-Analysis/
 /home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-baseline --help
 /home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-interferogram --help
 /home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-filtering --help
+/home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-mcf --help
 ```
 
 ## 4. Quick Start / 快速开始
@@ -75,6 +78,7 @@ geodesy-analysis-gamma-interferogram --config /absolute/PROJECT/config/analysis/
 geodesy-analysis-gamma-interferogram --config /absolute/PROJECT/config/analysis/gamma_interferogram.cfg --case main
 geodesy-analysis-filtering --config /absolute/PROJECT/config/analysis/insar_filtering.cfg --dry-run
 geodesy-analysis-filtering --config /absolute/PROJECT/config/analysis/insar_filtering.cfg --case nl_insar
+geodesy-analysis-gamma-mcf --config /absolute/PROJECT/config/analysis/gamma_mcf_unwrapping.cfg --case main
 ```
 
 ## 5. Outputs and Logs / 结果与日志
@@ -87,6 +91,8 @@ geodesy-analysis-filtering --config /absolute/PROJECT/config/analysis/insar_filt
 - 干涉日志：`<case_root>/LOG/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA/`
 - 滤波结果：`<case_root>/ANALYSIS/FILTERING/{NL_INSAR,GAMMA_BM3D,GAMMA_ADF}/`
 - 滤波日志：`<case_root>/LOG/ANALYSIS/FILTERING/<METHOD>/`
+- 解缠结果：`<case_root>/ANALYSIS/UNWRAPPING/GAMMA_MCF/`
+- 解缠日志：`<case_root>/LOG/ANALYSIS/UNWRAPPING/GAMMA_MCF/`
 
 只有清单和所有核心文件通过检查后才发布正式目录。相同输入可安全跳过；输入或参数
 变化时停止并要求用户处理旧结果，不静默覆盖。新写出的 Analysis 清单均为 portable
@@ -95,7 +101,7 @@ Geodesy-Visualization 发布。
 
 ## 6. Current Scope / 当前范围
 
-本阶段完成到三种干涉图滤波方法。解缠、大气改正、MintPy、DS-InSAR 不在
+本阶段完成到 GAMMA MCF 解缠。大气改正、MintPy、DS-InSAR 不在
 当前完成声明内。旧脚本在真实数据对照完成前保留为回退来源，但新代码不导入旧仓库。
 本次代码重构只改变新运行的契约，不移动、复制或删除现有研究项目数据；真实项目迁移
 由后续独立的可预览迁移任务完成。
