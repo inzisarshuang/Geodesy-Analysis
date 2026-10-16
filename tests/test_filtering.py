@@ -12,6 +12,19 @@ from geodesy_analysis.insar import filtering
 class FilteringTests(unittest.TestCase):
     """Preserve filter defaults, complex composition, and mask behavior."""
 
+    def test_public_functions_are_reexported_from_package(self) -> None:
+        for name in (
+            "resolve_filter_parameters",
+            "estimate_boxcar_coherence",
+            "nonlocal_insar_filter",
+            "compose_filtered_interferogram",
+        ):
+            function = getattr(filtering, name)
+            self.assertEqual(
+                function.__module__,
+                "geodesy_analysis.insar.filtering.methods.nl_insar",
+            )
+
     def test_parameter_defaults_and_complex_composition(self) -> None:
         parameters = filtering.resolve_filter_parameters()
         self.assertEqual(
