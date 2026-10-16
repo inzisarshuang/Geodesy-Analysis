@@ -54,8 +54,9 @@ ANALYSIS/GAMMA/INTERFEROGRAM  → ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA
 旧项目如需继续运行，应先执行明确的目录迁移或继续使用旧入口。
 
 标准目录不引入 `main`、`test` 或统一 `run_id`。`output_dir` 是可选参数：用户
-没有填写时，程序根据处理阶段和所选方法自动生成标准目录；用户显式填写时，以
-手动指定的目录为准。自动映射为：
+没有填写时，程序从输入 manifest 向上定位当前案例的 `ANALYSIS` 目录，再根据
+处理阶段和所选方法生成同级标准目录；用户显式填写时，以手动指定的目录为准。
+自动映射为：
 
 ```text
 nl_insar    → ANALYSIS/FILTERING/NL_INSAR
@@ -63,6 +64,12 @@ gamma_bm3d  → ANALYSIS/FILTERING/GAMMA_BM3D
 gamma_adf   → ANALYSIS/FILTERING/GAMMA_ADF
 gamma_mcf   → ANALYSIS/UNWRAPPING/GAMMA_MCF
 ```
+
+例如输入位于
+`S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA/interferogram_manifest.json`，
+NL-InSAR 默认输出就是 `S1/ASCENDING_128/ANALYSIS/FILTERING/NL_INSAR`。如果
+输入 manifest 的祖先目录中没有标准 `ANALYSIS` 根，程序不猜测案例位置，必须由
+用户显式填写 `output_dir`。
 
 手动路径可以是项目根目录内的相对路径或绝对路径，并接受与自动目录不同的名称，
 用于保留同一方法的多组输入或参数结果；路径仍必须通过项目根目录边界检查。框架
@@ -278,7 +285,8 @@ LOG/ANALYSIS/UNWRAPPING/GAMMA_MCF/
 1. 新目录不再把 NL-InSAR 错误归类到顶层 GAMMA；
 2. 三种滤波方法都从同一干涉图 manifest 生成统一产品角色和滤波 manifest；
 3. GAMMA MCF 只依据显式滤波 manifest 选择输入；
-4. `output_dir` 未设置时按阶段和方法自动生成，手动设置时覆盖默认值；
+4. `output_dir` 未设置时从输入 manifest 所属案例的 `ANALYSIS` 根按阶段和方法
+   自动生成，手动设置时覆盖默认值；
 5. 项目结构不引入强制或自动 `run_id`，完整谱系可由 manifest 逐级追溯；
 6. Gansu 的既有基线、干涉图、CFG 和日志同步迁入阶段优先目录；
 7. Gansu 单对真实数据完成三种滤波及 MCF 对照；
