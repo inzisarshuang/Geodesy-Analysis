@@ -66,9 +66,6 @@ def build_gamma_mcf_plan(case: GammaMcfCase) -> GammaMcfPlan:
         raise ValueError("filtering manifest interferogram identity is required")
     upstream = resolve_project_input(case.paths, upstream_value)
     upstream_raw = upstream.read_bytes()
-    upstream_digest = hashlib.sha256(upstream_raw).hexdigest()
-    if payload.get("interferogram_manifest_digest") != upstream_digest:
-        raise ValueError("filtering manifest interferogram digest does not match its source")
     try:
         upstream_payload = json.loads(upstream_raw)
     except json.JSONDecodeError as error:
@@ -77,6 +74,15 @@ def build_gamma_mcf_plan(case: GammaMcfCase) -> GammaMcfPlan:
         raise ValueError("interferogram manifest schema_version must be 1 or 2")
     if upstream_payload.get("status") != "complete":
         raise ValueError("interferogram manifest status must be complete")
+    upstream_digest = upstream_payload.get("scientific_manifest_digest")
+    if upstream_digest is not None and (
+        not isinstance(upstream_digest, str)
+        or re.fullmatch(r"[0-9a-f]{64}", upstream_digest) is None
+    ):
+        raise ValueError("interferogram manifest scientific digest is invalid")
+    upstream_digest = upstream_digest or hashlib.sha256(upstream_raw).hexdigest()
+    if payload.get("interferogram_manifest_digest") != upstream_digest:
+        raise ValueError("filtering manifest interferogram digest does not match its source")
     if upstream_payload.get("schema_version") == 2 and upstream_payload.get("case_id") != case.case_id:
         raise ValueError("interferogram manifest case_id is inconsistent")
 
@@ -133,9 +139,15 @@ def build_gamma_mcf_plan(case: GammaMcfCase) -> GammaMcfPlan:
     pairs.sort(key=lambda item: item.name)
     if [pair.name for pair in pairs] != sorted(upstream_names):
         raise ValueError("filtering and interferogram pair inventory is inconsistent")
+    scientific_digest = payload.get("scientific_manifest_digest")
+    if scientific_digest is not None and (
+        not isinstance(scientific_digest, str)
+        or re.fullmatch(r"[0-9a-f]{64}", scientific_digest) is None
+    ):
+        raise ValueError("filtering manifest scientific digest is invalid")
     filtering = FilteringManifest(
         source_path=source,
-        source_digest=hashlib.sha256(raw).hexdigest(),
+        source_digest=scientific_digest or hashlib.sha256(raw).hexdigest(),
         method=method,
         interferogram_manifest=upstream,
         interferogram_digest=upstream_digest,
