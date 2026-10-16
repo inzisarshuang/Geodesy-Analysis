@@ -140,9 +140,10 @@ def coherence_mask(
     coh: np.ndarray, threshold: float, keep_if_ge: bool = True
 ) -> np.ndarray:
     """由相干性阈值得到掩膜。keep_if_ge=True 表示 coh>=threshold 为有效(1)。"""
+    finite = np.isfinite(coh)
     if keep_if_ge:
-        return (coh >= threshold).astype(np.uint8)
-    return (coh <= threshold).astype(np.uint8)
+        return (finite & (coh >= threshold)).astype(np.uint8)
+    return (finite & (coh <= threshold)).astype(np.uint8)
 
 
 def amplitude_statistics(

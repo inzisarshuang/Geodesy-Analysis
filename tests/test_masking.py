@@ -28,6 +28,12 @@ class MaskingTests(unittest.TestCase):
             [[0, 1], [1, 1]],
         )
 
+    def test_coherence_mask_rejects_nonfinite_values(self) -> None:
+        coherence = np.array([[np.nan, np.inf], [0.4, 0.8]], dtype=np.float32)
+        np.testing.assert_array_equal(
+            masking.coherence_mask(coherence, 0.5), [[0, 0], [0, 1]]
+        )
+
     def test_mask_image_roundtrip_preserves_shape_and_binary_values(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "mask.bmp"
