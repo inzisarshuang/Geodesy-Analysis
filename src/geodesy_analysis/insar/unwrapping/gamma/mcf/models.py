@@ -21,6 +21,7 @@ class GammaMcfCase:
     external_mask: Path | None
     mask_operation: Literal["and", "or", "xor"]
     output_dir: Path
+    visualization_dir: Path
 
     @property
     def name(self) -> str:

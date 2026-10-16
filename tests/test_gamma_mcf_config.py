@@ -44,6 +44,41 @@ class GammaMcfConfigTests(unittest.TestCase):
             self.assertIsNone(case.external_mask)
             self.assertEqual(case.mask_operation, "and")
             self.assertEqual(case.output_dir, root / "S1/ASCENDING_128/ANALYSIS/UNWRAPPING/GAMMA_MCF")
+            self.assertEqual(
+                case.visualization_dir,
+                root / "S1/ASCENDING_128/VISUALIZATION/UNWRAPPING/GAMMA_MCF",
+            )
+
+    def test_explicit_visualization_directory_is_case_confined_and_disjoint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._files(root)
+            (case,) = load_gamma_mcf_config(
+                self._write(
+                    root,
+                    self._body(
+                        root,
+                        "visualization_dir = S1/ASCENDING_128/VISUALIZATION/UNWRAPPING/custom",
+                    ),
+                )
+            )
+            self.assertEqual(
+                case.visualization_dir,
+                root / "S1/ASCENDING_128/VISUALIZATION/UNWRAPPING/custom",
+            )
+
+            for value in (
+                "S1/DESCENDING_135/VISUALIZATION/UNWRAPPING/GAMMA_MCF",
+                "S1/ASCENDING_128/ANALYSIS/UNWRAPPING/GAMMA_MCF",
+                "S1/ASCENDING_128/ANALYSIS/FILTERING/NL_INSAR",
+            ):
+                with self.subTest(value=value), self.assertRaises(ValueError):
+                    load_gamma_mcf_config(
+                        self._write(
+                            root,
+                            self._body(root, f"visualization_dir = {value}"),
+                        )
+                    )
 
     def test_manual_reference_external_mask_and_explicit_output(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

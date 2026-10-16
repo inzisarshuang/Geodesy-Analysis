@@ -33,6 +33,7 @@ class GammaInterferogramCase:
     coherence_azimuth_window: int
     coherence_estimator: int
     output_dir: Path
+    visualization_dir: Path
 
     @property
     def name(self) -> str:

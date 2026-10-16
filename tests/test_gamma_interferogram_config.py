@@ -82,6 +82,35 @@ output_dir = S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA
                 case.output_dir,
                 (root / "S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA").resolve(),
             )
+            self.assertEqual(
+                case.visualization_dir,
+                (root / "S1/ASCENDING_128/VISUALIZATION/INTERFEROGRAM_GENERATION/GAMMA").resolve(),
+            )
+
+    def test_explicit_visualization_directory_is_case_confined_and_disjoint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._inputs(root)
+            body = self._body(root) + "visualization_dir = S1/ASCENDING_128/VISUALIZATION/manual_ifg\n"
+            (case,) = load_gamma_interferogram_config(self._write(root, body))
+            self.assertEqual(
+                case.visualization_dir,
+                (root / "S1/ASCENDING_128/VISUALIZATION/manual_ifg").resolve(),
+            )
+
+            for value in (
+                "S1/DESCENDING_135/VISUALIZATION/GAMMA",
+                "S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA",
+                "S1/ASCENDING_128/PRE/GAMMA",
+            ):
+                with self.subTest(value=value), self.assertRaises(ValueError):
+                    load_gamma_interferogram_config(
+                        self._write(
+                            root,
+                            self._body(root)
+                            + f"visualization_dir = {value}\n",
+                        )
+                    )
 
     def test_case_values_override_defaults_and_modes_are_normalized(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

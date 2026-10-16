@@ -37,6 +37,7 @@ def _summary(plan) -> dict[str, object]:
         "mcf_mode": plan.case.mcf_mode,
         "method": "gamma_mcf",
         "output_dir": str(plan.case.output_dir),
+        "visualization_dir": str(plan.case.visualization_dir),
         "pair_count": len(plan.pairs),
         "reference_mode": plan.case.reference_mode,
     }

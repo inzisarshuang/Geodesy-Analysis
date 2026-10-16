@@ -8,7 +8,11 @@ import re
 from collections.abc import Sequence
 from pathlib import Path
 
-from geodesy_analysis.common.case_paths import bind_analysis_case, resolve_case_input
+from geodesy_analysis.common.case_paths import (
+    bind_analysis_case,
+    resolve_case_input,
+    resolve_case_visualization_output,
+)
 
 from .models import GammaMcfCase
 
@@ -22,7 +26,12 @@ _DEFAULTS = {
     "external_mask": "",
     "mask_operation": "and",
 }
-_KEYS = set(_DEFAULTS) | {"case_root", "filtering_manifest", "output_dir"}
+_KEYS = set(_DEFAULTS) | {
+    "case_root",
+    "filtering_manifest",
+    "output_dir",
+    "visualization_dir",
+}
 _DEFAULT_KEYS = set(_DEFAULTS)
 
 
@@ -135,6 +144,14 @@ def load_gamma_mcf_config(path: Path) -> tuple[GammaMcfCase, ...]:
         external = resolve_case_input(paths, values["external_mask"]) if values["external_mask"] else None
         output_text = values.get("output_dir", "").strip()
         output = _project_output(root, output_text) if output_text else _automatic_output(manifest, paths.case_root)
+        visualization_text = values.get("visualization_dir", "").strip()
+        visualization = resolve_case_visualization_output(
+            paths,
+            visualization_text
+            or f"{paths.case_id}/VISUALIZATION/UNWRAPPING/GAMMA_MCF",
+            scientific_output=output,
+            inputs=(manifest,) + ((external,) if external is not None else ()),
+        )
         cases.append(
             GammaMcfCase(
                 paths=paths,
@@ -147,6 +164,7 @@ def load_gamma_mcf_config(path: Path) -> tuple[GammaMcfCase, ...]:
                 external_mask=external,
                 mask_operation=operation,
                 output_dir=output,
+                visualization_dir=visualization,
             )
         )
     if not cases:

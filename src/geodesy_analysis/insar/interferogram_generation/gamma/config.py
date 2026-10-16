@@ -12,6 +12,7 @@ from geodesy_analysis.common.case_paths import (
     bind_analysis_case,
     resolve_case_input,
     resolve_case_output,
+    resolve_case_visualization_output,
 )
 
 from .models import GammaInterferogramCase
@@ -38,6 +39,7 @@ _VALUE_KEYS = {
     "coherence_azimuth_window",
     "coherence_estimator",
     "output_dir",
+    "visualization_dir",
 }
 _DEFAULT_KEYS = _VALUE_KEYS - {"case_root"}
 _BUILTIN_DEFAULTS = {
@@ -198,6 +200,14 @@ def load_gamma_interferogram_config(path: Path) -> tuple[GammaInterferogramCase,
                 f"{source}: output_dir must be the canonical interferogram output: "
                 f"{expected_output}"
             )
+        visualization_text = values.get("visualization_dir", "").strip()
+        visualization_dir = resolve_case_visualization_output(
+            paths,
+            visualization_text
+            or f"{paths.case_id}/VISUALIZATION/INTERFEROGRAM_GENERATION/GAMMA",
+            scientific_output=output_dir,
+            inputs=(registered_stack, baseline_manifest, radar_height),
+        )
 
         cases.append(
             GammaInterferogramCase(
@@ -242,6 +252,7 @@ def load_gamma_interferogram_config(path: Path) -> tuple[GammaInterferogramCase,
                     values["coherence_estimator"], "coherence_estimator", source
                 ),
                 output_dir=output_dir,
+                visualization_dir=visualization_dir,
             )
         )
     if not cases:

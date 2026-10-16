@@ -35,6 +35,7 @@ def _summary(plan) -> dict[str, object]:
         "interferogram_manifest": str(plan.manifest.source_path),
         "method": plan.case.method.value,
         "output_dir": str(plan.case.output_dir),
+        "visualization_dir": str(plan.case.visualization_dir),
         "pair_count": len(plan.pairs),
     }
 

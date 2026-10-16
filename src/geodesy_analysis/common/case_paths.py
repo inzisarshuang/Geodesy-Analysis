@@ -120,10 +120,44 @@ def resolve_case_output(paths: AnalysisCasePaths, value: str | Path) -> Path:
     )
 
 
+def _overlaps(first: Path, second: Path) -> bool:
+    """Return whether either resolved path contains the other."""
+
+    left = first.resolve()
+    right = second.resolve()
+    return left == right or left in right.parents or right in left.parents
+
+
+def resolve_case_visualization_output(
+    paths: AnalysisCasePaths,
+    value: str | Path,
+    *,
+    scientific_output: Path,
+    inputs: tuple[Path, ...],
+) -> Path:
+    """Resolve a case-local display output disjoint from scientific data."""
+
+    resolved = _require_within(
+        _resolve_declared_path(paths.project_root, value, "visualization output"),
+        paths.case_root,
+        "visualization output",
+        "case root",
+    )
+    protected = (Path(scientific_output), *(Path(path) for path in inputs))
+    for path in protected:
+        if _overlaps(resolved, path):
+            raise ValueError(
+                "visualization output must not overlap scientific output or input: "
+                f"{resolved} overlaps {path.resolve()}"
+            )
+    return resolved
+
+
 __all__ = [
     "AnalysisCasePaths",
     "bind_analysis_case",
     "resolve_case_input",
     "resolve_case_output",
+    "resolve_case_visualization_output",
     "resolve_project_input",
 ]

@@ -11,6 +11,7 @@ from geodesy_analysis.common.case_paths import (
     bind_analysis_case,
     resolve_case_input,
     resolve_case_output,
+    resolve_case_visualization_output,
     resolve_project_input,
 )
 
@@ -124,6 +125,55 @@ class AnalysisCasePathTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "case output.*case root"):
                 resolve_case_output(
                     paths, "S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA"
+                )
+
+    def test_visualization_output_stays_in_case_and_does_not_overlap_data(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "study"
+            case = project / "S1" / "ASCENDING_128"
+            scientific = case / "ANALYSIS" / "FILTERING" / "NL_INSAR"
+            manifest = case / "ANALYSIS" / "INTERFEROGRAM_GENERATION" / "GAMMA" / "interferogram_manifest.json"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text("{}\n", encoding="utf-8")
+            paths = bind_analysis_case(project, "main", "S1/ASCENDING_128")
+
+            resolved = resolve_case_visualization_output(
+                paths,
+                "S1/ASCENDING_128/VISUALIZATION/FILTERING/NL_INSAR",
+                scientific_output=scientific,
+                inputs=(manifest,),
+            )
+            self.assertEqual(
+                resolved,
+                case / "VISUALIZATION" / "FILTERING" / "NL_INSAR",
+            )
+
+            for value in (
+                scientific,
+                scientific / "pictures",
+                scientific.parent,
+                manifest.parent,
+            ):
+                with self.subTest(value=value), self.assertRaisesRegex(
+                    ValueError, "visualization output.*overlap"
+                ):
+                    resolve_case_visualization_output(
+                        paths,
+                        value,
+                        scientific_output=scientific,
+                        inputs=(manifest,),
+                    )
+
+            outside = root / "outside"
+            outside.mkdir()
+            (case / "VISUALIZATION").symlink_to(outside, target_is_directory=True)
+            with self.assertRaisesRegex(ValueError, "visualization output.*case root"):
+                resolve_case_visualization_output(
+                    paths,
+                    "S1/ASCENDING_128/VISUALIZATION/FILTERING/NL_INSAR",
+                    scientific_output=scientific,
+                    inputs=(manifest,),
                 )
 
 

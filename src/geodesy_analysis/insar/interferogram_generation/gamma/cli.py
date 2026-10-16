@@ -50,6 +50,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
                     "case_id": case.case_id,
                     "looks": {"azimuth": case.azimuth_looks, "range": case.range_looks},
                     "output_dir": str(case.output_dir),
+                    "visualization_dir": str(case.visualization_dir),
                     "pair_count": len(plan.pairs),
                     "polarization": case.polarization,
                     "radar_height": str(case.radar_height),

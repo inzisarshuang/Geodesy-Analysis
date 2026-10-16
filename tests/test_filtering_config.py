@@ -83,6 +83,14 @@ method = gamma_adf
                     root / "S1/ASCENDING_128/ANALYSIS/FILTERING/GAMMA_ADF",
                 ],
             )
+            self.assertEqual(
+                [case.visualization_dir for case in (nl, bm3d, adf)],
+                [
+                    root / "S1/ASCENDING_128/VISUALIZATION/FILTERING/NL_INSAR",
+                    root / "S1/ASCENDING_128/VISUALIZATION/FILTERING/GAMMA_BM3D",
+                    root / "S1/ASCENDING_128/VISUALIZATION/FILTERING/GAMMA_ADF",
+                ],
+            )
 
     def test_explicit_project_confined_output_overrides_default(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -92,6 +100,37 @@ method = gamma_adf
                 self._write(root, self._body(root, "output_dir = results/manual_nl"))
             )
             self.assertEqual(case.output_dir, (root / "results/manual_nl").resolve())
+
+    def test_explicit_visualization_directory_is_case_confined_and_disjoint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._manifest(root)
+            (case,) = load_filtering_config(
+                self._write(
+                    root,
+                    self._body(
+                        root,
+                        "visualization_dir = S1/ASCENDING_128/VISUALIZATION/FILTERING/custom",
+                    ),
+                )
+            )
+            self.assertEqual(
+                case.visualization_dir,
+                root / "S1/ASCENDING_128/VISUALIZATION/FILTERING/custom",
+            )
+
+            for value in (
+                "S1/DESCENDING_135/VISUALIZATION/FILTERING/NL_INSAR",
+                "S1/ASCENDING_128/ANALYSIS/FILTERING/NL_INSAR",
+                "S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA",
+            ):
+                with self.subTest(value=value), self.assertRaises(ValueError):
+                    load_filtering_config(
+                        self._write(
+                            root,
+                            self._body(root, f"visualization_dir = {value}"),
+                        )
+                    )
 
     def test_requires_explicit_output_when_manifest_has_no_analysis_ancestor(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

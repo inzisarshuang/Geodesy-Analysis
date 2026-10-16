@@ -8,7 +8,11 @@ import re
 from collections.abc import Sequence
 from pathlib import Path
 
-from geodesy_analysis.common.case_paths import bind_analysis_case, resolve_case_input
+from geodesy_analysis.common.case_paths import (
+    bind_analysis_case,
+    resolve_case_input,
+    resolve_case_visualization_output,
+)
 
 from .models import FilteringCase, FilteringMethod
 
@@ -40,6 +44,7 @@ _VALUE_KEYS = set(_BUILTIN_DEFAULTS) | {
     "interferogram_manifest",
     "method",
     "output_dir",
+    "visualization_dir",
 }
 _DEFAULT_KEYS = _VALUE_KEYS - {"case_root", "interferogram_manifest", "output_dir"}
 
@@ -156,6 +161,14 @@ def load_filtering_config(path: Path) -> tuple[FilteringCase, ...]:
             raise FileNotFoundError(f"interferogram manifest does not exist: {manifest}")
         output_text = values.get("output_dir", "").strip()
         output = _project_output(root, output_text) if output_text else _automatic_output(manifest, method, paths.case_root)
+        visualization_text = values.get("visualization_dir", "").strip()
+        visualization = resolve_case_visualization_output(
+            paths,
+            visualization_text
+            or f"{paths.case_id}/VISUALIZATION/FILTERING/{method.directory_name}",
+            scientific_output=output,
+            inputs=(manifest,),
+        )
 
         odd_keys = ("search_window", "patch_size", "coherence_window")
         parsed_ints = {key: _integer(values, key, source) for key in odd_keys}
@@ -177,6 +190,7 @@ def load_filtering_config(path: Path) -> tuple[FilteringCase, ...]:
                 interferogram_manifest=manifest,
                 method=method,
                 output_dir=output,
+                visualization_dir=visualization,
                 search_window=parsed_ints["search_window"],
                 patch_size=parsed_ints["patch_size"],
                 minimum_looks=minimum_looks,

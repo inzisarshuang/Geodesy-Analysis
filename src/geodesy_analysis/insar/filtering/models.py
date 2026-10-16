@@ -25,6 +25,7 @@ class FilteringCase:
     interferogram_manifest: Path
     method: FilteringMethod
     output_dir: Path
+    visualization_dir: Path
     search_window: int = 13
     patch_size: int = 3
     minimum_looks: int = 80
