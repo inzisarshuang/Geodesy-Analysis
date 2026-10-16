@@ -29,8 +29,11 @@ geodesy_analysis.insar.filtering.methods.nl_insar
 from __future__ import annotations
 
 from typing import Dict, Optional, Tuple
+from pathlib import Path
 
 import numpy as np
+
+from insar_data_adapter import read_binary_raster, read_complex_binary_raster
 
 
 def estimate_likelihood_bandwidth(
@@ -437,3 +440,60 @@ def compose_filtered_interferogram(
     )
     output[~np.asarray(valid_mask, dtype=bool)] = 0.0
     return output.astype(np.complex64, copy=False)
+
+
+def run_nl_insar_pair(pair, plan, output_dir: Path) -> dict[str, Path]:
+    """Apply the legacy coherence-gated NL-InSAR calculation to one planned pair."""
+
+    shape = (plan.lines, plan.width)
+    master_intensity = read_binary_raster(pair.master_mli, shape).astype(np.float32)
+    slave_intensity = read_binary_raster(pair.slave_mli, shape).astype(np.float32)
+    interferogram = read_complex_binary_raster(pair.interferogram, shape)
+    valid = (
+        np.isfinite(master_intensity)
+        & np.isfinite(slave_intensity)
+        & np.isfinite(interferogram.real)
+        & np.isfinite(interferogram.imag)
+        & (master_intensity > 0.0)
+        & (slave_intensity > 0.0)
+        & (np.abs(interferogram) > 0.0)
+    )
+    master_amplitude = np.sqrt(np.where(valid, master_intensity, 0.0))
+    slave_amplitude = np.sqrt(np.where(valid, slave_intensity, 0.0))
+    phase = np.where(valid, np.angle(interferogram), 0.0).astype(np.float32)
+    case = plan.case
+    parameters = resolve_filter_parameters(
+        search_window=case.search_window,
+        patch_size=case.patch_size,
+        minimum_looks=case.minimum_looks,
+        likelihood_h=case.likelihood_h,
+        seed=case.seed,
+    )
+    guide = estimate_boxcar_coherence(
+        master_amplitude,
+        slave_amplitude,
+        phase,
+        case.coherence_window,
+        valid,
+    )
+    active = valid & (guide >= case.filter_threshold)
+    reflectivity, filtered_phase, posterior = nonlocal_insar_filter(
+        master_amplitude,
+        slave_amplitude,
+        phase,
+        valid,
+        parameters,
+        process_mask=active,
+        tile_size=case.tile_size,
+    )
+    filtered = compose_filtered_interferogram(reflectivity, filtered_phase, valid)
+    filtered[valid & ~active] = interferogram[valid & ~active]
+    coherence = np.where(active, posterior, guide).astype(np.float32)
+    coherence[~valid] = 0.0
+    target = Path(output_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    filtered_path = target / "pair.tflt.filt"
+    coherence_path = target / "pair.coh.filt"
+    filtered.astype(">c8").tofile(filtered_path)
+    coherence.astype(">f4").tofile(coherence_path)
+    return {"filtered_interferogram": filtered_path, "filtered_coherence": coherence_path}
