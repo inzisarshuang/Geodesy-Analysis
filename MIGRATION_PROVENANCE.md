@@ -53,3 +53,13 @@ radar-height size were both `58,081,780` bytes. A same-input rerun returned
 `skipped`. Project-local evidence, complete commands, digests, dimensions, and
 output sizes are recorded in
 `Gansu_Jishishan_LT1/LOG/ANALYSIS/GAMMA/validation/validation.json`.
+
+## Baseline visualization ownership
+
+On 2026-10-14, baseline-network rendering moved from Geodesy-Analysis to
+Geodesy-Visualization. Analysis now publishes only the schema-1 scientific
+manifest, network table, image-pair inventory, image inventory, and provenance.
+The Visualization command reads that manifest without invoking GAMMA. Existing
+Analysis outputs that contain legacy `plot_path` and plotting `warnings` fields
+remain restart-compatible; those unrelated fields and a missing legacy PNG do
+not invalidate otherwise complete scientific products.

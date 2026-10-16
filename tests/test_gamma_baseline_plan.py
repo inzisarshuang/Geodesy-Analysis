@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from geodesy_analysis.common.case_paths import bind_analysis_case
 from geodesy_analysis.insar.baseline_selection.gamma.models import GammaBaselineCase
 from geodesy_analysis.insar.baseline_selection.gamma.plan import (
     build_gamma_baseline_plan,
@@ -17,7 +18,7 @@ class GammaBaselinePlanTests(unittest.TestCase):
     """Pin selected assets, inventories, and legacy-equivalent argv."""
 
     def _manifest(self, root: Path) -> Path:
-        stack = root / "PRE" / "RSLC"
+        stack = root / "S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET"
         data = stack / "RSLC"
         data.mkdir(parents=True)
         dates = ("20231214", "20231226", "20240107")
@@ -56,14 +57,13 @@ class GammaBaselinePlanTests(unittest.TestCase):
 
     def _case(self, root: Path, mode: str) -> GammaBaselineCase:
         return GammaBaselineCase(
-            name=mode.lower(),
-            project_root=root,
+            paths=bind_analysis_case(root, mode.lower(), "S1/ASCENDING_128"),
             registered_stack=self._manifest(root),
             polarization="VV",
             network_type=mode,
             max_perpendicular_baseline=300.0,
             max_temporal_baseline=100.0,
-            output_dir=root / "ANALYSIS" / mode,
+            output_dir=root / "S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE",
         )
 
     def test_builds_deterministic_inventory_from_manifest_reference(self) -> None:
@@ -79,8 +79,8 @@ class GammaBaselinePlanTests(unittest.TestCase):
             self.assertEqual(
                 plan.slc_tab_text,
                 "".join(
-                    f"{root / 'PRE/RSLC/RSLC' / date}.rslc "
-                    f"{root / 'PRE/RSLC/RSLC' / date}.rslc.par\n"
+                    f"{root / 'S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/RSLC' / date}.rslc "
+                    f"{root / 'S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/RSLC' / date}.rslc.par\n"
                     for date in ("20231214", "20231226", "20240107")
                 ),
             )
@@ -106,7 +106,10 @@ class GammaBaselinePlanTests(unittest.TestCase):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 plan = build_gamma_baseline_plan(self._case(root, mode))
-                reference = str(root / "PRE/RSLC/RSLC/20231226.rslc.par")
+                reference = str(
+                    root
+                    / "S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/RSLC/20231226.rslc.par"
+                )
                 self.assertEqual(
                     plan.base_calc_command,
                     tuple(reference if value == "REF" else value for value in template),

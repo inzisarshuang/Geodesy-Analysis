@@ -6,7 +6,11 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from geodesy_analysis.common.paths import validate_within_root
+from geodesy_analysis.common.case_paths import (
+    AnalysisCasePaths,
+    resolve_case_input,
+    resolve_project_input,
+)
 from geodesy_analysis.insar.common.registered_stack import read_registered_stack
 
 from .models import (
@@ -37,7 +41,10 @@ def _required_string(payload: dict[str, object], key: str) -> str:
 
 
 def read_baseline_manifest(
-    path: Path, *, project_root: Path
+    path: Path,
+    *,
+    paths: AnalysisCasePaths,
+    registered_stack: Path,
 ) -> BaselineManifest:
     """Read baseline identity without opening its network table.
 
@@ -45,20 +52,38 @@ def read_baseline_manifest(
     stack mismatch before it inspects any derived products.
     """
 
-    root = Path(project_root).expanduser().resolve(strict=True)
-    source = validate_within_root(Path(path), root, "baseline manifest")
-    if not source.is_file():
-        raise FileNotFoundError(f"baseline manifest not found: {source}")
+    source = resolve_case_input(paths, path)
     try:
         payload = json.loads(source.read_text(encoding="utf-8"))
     except json.JSONDecodeError as error:
         raise ValueError(f"invalid baseline manifest JSON {source}: {error}") from error
     if not isinstance(payload, dict):
         raise ValueError("baseline manifest root must be a JSON object")
-    if payload.get("schema_version") != 1:
-        raise ValueError("baseline manifest schema_version must be 1")
+    schema_version = payload.get("schema_version")
+    if schema_version not in {1, 2}:
+        raise ValueError("baseline manifest schema_version must be 1 or 2")
     if payload.get("status") != "complete":
         raise ValueError("baseline manifest status must be complete")
+    case_id: str | None = None
+    manifest_stack: Path | None = None
+    if schema_version == 2:
+        case_id = _required_string(payload, "case_id")
+        if case_id != paths.case_id:
+            raise ValueError("baseline manifest case_id does not match configured case")
+        if payload.get("backend") != {"name": "gamma"}:
+            raise ValueError("baseline manifest backend must name gamma")
+        raw_stack = _required_string(payload, "registered_stack_project_path")
+        try:
+            manifest_stack = resolve_project_input(paths, raw_stack)
+        except (ValueError, FileNotFoundError) as error:
+            raise type(error)(
+                f"baseline manifest registered_stack_project_path {error}"
+            ) from error
+        if manifest_stack != Path(registered_stack).resolve():
+            raise ValueError(
+                "baseline manifest registered_stack_project_path does not match "
+                "configured registered stack"
+            )
     stack_digest = _required_string(payload, "stack_digest")
     polarization = _required_string(payload, "polarization").upper()
     reference_date = _date(payload.get("reference_date"), "baseline reference_date")
@@ -68,9 +93,7 @@ def read_baseline_manifest(
     raw_network = Path(_required_string(payload, "network_path"))
     if raw_network.is_absolute() or ".." in raw_network.parts:
         raise ValueError("baseline manifest network path must be relative and cannot traverse")
-    network_path = validate_within_root(
-        source.parent / raw_network, root, "baseline network"
-    )
+    network_path = (source.parent / raw_network).resolve()
     try:
         network_path.relative_to(source.parent)
     except ValueError as error:
@@ -80,6 +103,9 @@ def read_baseline_manifest(
         raise ValueError("baseline manifest pair_count must be a positive integer")
     return BaselineManifest(
         source_path=source,
+        schema_version=schema_version,
+        case_id=case_id,
+        registered_stack=manifest_stack,
         stack_digest=stack_digest,
         polarization=polarization,
         reference_date=reference_date,
@@ -150,7 +176,9 @@ def build_gamma_interferogram_plan(
         polarization=case.polarization,
     )
     baseline = read_baseline_manifest(
-        case.baseline_manifest, project_root=case.project_root
+        case.baseline_manifest,
+        paths=case.paths,
+        registered_stack=case.registered_stack,
     )
     if baseline.stack_digest != stack.source_digest:
         raise ValueError("baseline manifest stack_digest does not match registered stack")
@@ -159,9 +187,10 @@ def build_gamma_interferogram_plan(
     if baseline.polarization != case.polarization:
         raise ValueError("baseline manifest polarization does not match requested polarization")
 
-    radar_height = validate_within_root(
-        case.radar_height, case.project_root, "radar height"
-    )
+    try:
+        radar_height = resolve_case_input(case.paths, case.radar_height)
+    except FileNotFoundError as error:
+        raise FileNotFoundError(f"radar height not found: {case.radar_height}") from error
     if not radar_height.is_file():
         raise FileNotFoundError(f"radar height not found: {radar_height}")
     if radar_height.stat().st_size == 0:

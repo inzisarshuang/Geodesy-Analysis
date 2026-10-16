@@ -1,5 +1,9 @@
 # GAMMA Baseline and Interferogram Implementation Plan
 
+> Historical implementation record. The baseline-plot ownership described here
+> was superseded on 2026-10-14: plotting now belongs to Geodesy-Visualization,
+> while Geodesy-Analysis publishes only the scientific manifest and network.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build installable, CFG-driven GAMMA baseline-selection and interferogram-generation workflows that consume PRE `registered_stack.json` products and publish validated manifests for the later filtering stage.

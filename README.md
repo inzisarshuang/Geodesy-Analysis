@@ -14,7 +14,7 @@ Geodesy-Analysis/
 ├── src/geodesy_analysis/
 │   ├── common/                         # 日志、进度、命令和路径安全
 │   └── insar/
-│       ├── baseline_selection/         # 基线网络选择与来源无关绘图
+│       ├── baseline_selection/         # 基线网络计算与选择
 │       └── interferogram_generation/   # MLI、差分干涉图与相干性
 ├── config_examples/                    # 完整注释的正式 CFG 示例
 ├── docs/
@@ -29,8 +29,9 @@ Geodesy-Analysis/
 正式输入是 Geodesy-Preprocessing 发布的 `registered_stack.json`。Analysis 不重新
 下载数据、生成 SLC 或配准影像。
 
-1. `geodesy-analysis-gamma-baseline` 生成 DSI、SBAS 或 PSI 网络、基线清单和图。
-2. `geodesy-analysis-baseline-plot` 在不重新调用 GAMMA 的情况下单独重绘基线图。
+1. `geodesy-analysis-gamma-baseline` 生成 DSI、SBAS 或 PSI 网络及基线清单。
+2. `geodesy-visualization-insar-baseline` 读取基线清单并生成网络图；该命令属于
+   Geodesy-Visualization，在 `envPlot` 中运行。
 3. `geodesy-analysis-gamma-interferogram` 按网络生成 MLI、差分干涉图和相干性。
 
 详细操作见 [GAMMA InSAR workflow](docs/workflows/gamma_insar.md)。
@@ -46,11 +47,10 @@ Geodesy-Analysis/
   /mnt/beegfs/procesados/yiluntan/Geodesy-Analysis
 ```
 
-安装后可在任意目录检查三个入口：
+安装后可在任意目录检查两个 Analysis 入口：
 
 ```bash
 /home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-baseline --help
-/home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-baseline-plot --help
 /home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-interferogram --help
 ```
 
@@ -58,7 +58,11 @@ Geodesy-Analysis/
 
 先复制并修改 `config_examples/gamma_baseline.cfg`，使用 `--dry-run` 检查，再正式
 生成基线。随后复制 `config_examples/gamma_interferogram.cfg`，用同样方式检查和
-运行干涉阶段。CFG 的 `[project] root` 决定全部相对路径，与终端当前目录无关。
+运行干涉阶段。如需基线图，使用 Geodesy-Visualization 的
+`config_examples/baseline_plot.cfg`。CFG 的 `[project] root` 决定全部相对路径，
+与终端当前目录无关。每个 `[case:main]` 还必须声明类似
+`case_root = S1/ASCENDING_128` 的正式 case 路径；`main` 只是 CLI 选择标签，不参与
+目录命名。
 
 ```bash
 geodesy-analysis-gamma-baseline --config /absolute/PROJECT/config/analysis/gamma_baseline.cfg --case main --dry-run
@@ -69,15 +73,21 @@ geodesy-analysis-gamma-interferogram --config /absolute/PROJECT/config/analysis/
 
 ## 5. Outputs and Logs / 结果与日志
 
-- 基线结果：`ANALYSIS/GAMMA/<case>/BASELINE/`
-- 干涉结果：`ANALYSIS/GAMMA/<case>/INTERFEROGRAM/`
-- 基线日志：`LOG/ANALYSIS/GAMMA/BASELINE/<case>/`
-- 干涉日志：`LOG/ANALYSIS/GAMMA/INTERFEROGRAM/<case>/`
+- PRE 输入：`<case_root>/PRE/GAMMA/RSLC_SUBSET/registered_stack.json`
+- 基线结果：`<case_root>/ANALYSIS/GAMMA/BASELINE/`
+- 干涉结果：`<case_root>/ANALYSIS/GAMMA/INTERFEROGRAM/`，内部使用 `MLI/` 与
+  `PAIRS/<日期对>/`
+- 基线日志：`<case_root>/LOG/ANALYSIS/GAMMA/BASELINE/`
+- 干涉日志：`<case_root>/LOG/ANALYSIS/GAMMA/INTERFEROGRAM/`
 
 只有清单和所有核心文件通过检查后才发布正式目录。相同输入可安全跳过；输入或参数
-变化时停止并要求用户处理旧结果，不静默覆盖。
+变化时停止并要求用户处理旧结果，不静默覆盖。新写出的 Analysis 清单均为 portable
+schema v2；迁移期读端继续接受 schema v1。Analysis 不创建渲染产物，所有图像由
+Geodesy-Visualization 发布。
 
 ## 6. Current Scope / 当前范围
 
 本阶段完成到差分干涉图和相干性。滤波、解缠、大气改正、MintPy、DS-InSAR 不在
 当前完成声明内。旧脚本在真实数据对照完成前保留为回退来源，但新代码不导入旧仓库。
+本次代码重构只改变新运行的契约，不移动、复制或删除现有研究项目数据；真实项目迁移
+由后续独立的可预览迁移任务完成。

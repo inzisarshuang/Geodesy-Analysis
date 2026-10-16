@@ -13,7 +13,12 @@ from geodesy_analysis.common.progress import emit_progress
 from geodesy_analysis.io import atomic_output_directory
 
 from .models import GammaInterferogramPlan, InterferogramPair
-from .publication import ensure_nonempty, gamma_parameter, interferogram_input_signature
+from .publication import (
+    ensure_nonempty,
+    gamma_parameter,
+    interferogram_input_signature,
+    legacy_interferogram_input_signature,
+)
 
 _TASK = "ANALYSIS_GAMMA_INTERFEROGRAM"
 
@@ -47,6 +52,14 @@ def _published_asset(output: Path, value: object, label: str) -> Path:
     return ensure_nonempty(target, label)
 
 
+def _project_path(plan: GammaInterferogramPlan, path: Path) -> str:
+    resolved = Path(path).resolve()
+    try:
+        return resolved.relative_to(plan.case.project_root).as_posix()
+    except ValueError as error:
+        raise ValueError(f"interferogram path leaves project root: {resolved}") from error
+
+
 def _read_existing(
     plan: GammaInterferogramPlan, signature: str
 ) -> InterferogramRunSummary | None:
@@ -60,12 +73,45 @@ def _read_existing(
         provenance = json.loads((output / "provenance.json").read_text(encoding="utf-8"))
         if not isinstance(manifest, dict) or not isinstance(provenance, dict):
             raise ValueError("interferogram manifest and provenance must be JSON objects")
-        if provenance.get("input_signature") != signature:
+        schema_version = manifest.get("schema_version")
+        if schema_version not in {1, 2} or manifest.get("status") != "complete":
+            raise ValueError("interferogram manifest is not a supported complete schema")
+        expected_signature = (
+            legacy_interferogram_input_signature(plan)
+            if schema_version == 1
+            else signature
+        )
+        if provenance.get("input_signature") != expected_signature:
             raise FileExistsError(
                 f"interferogram output was produced from different inputs: {output}"
             )
-        if manifest.get("schema_version") != 1 or manifest.get("status") != "complete":
-            raise ValueError("interferogram manifest is not complete schema version 1")
+        if schema_version == 2:
+            identities = {
+                "registered_stack_project_path": _project_path(
+                    plan, plan.case.registered_stack
+                ),
+                "baseline_manifest_project_path": _project_path(
+                    plan, plan.case.baseline_manifest
+                ),
+                "radar_height_project_path": _project_path(
+                    plan, plan.case.radar_height
+                ),
+            }
+            if manifest.get("case_id") != plan.case.case_id:
+                raise ValueError("interferogram manifest case identity is inconsistent")
+            if manifest.get("backend") != {"name": "gamma"}:
+                raise ValueError("interferogram manifest backend is inconsistent")
+            if provenance.get("schema_version") != 2:
+                raise ValueError("interferogram provenance schema is inconsistent")
+            if provenance.get("case_id") != plan.case.case_id:
+                raise ValueError("interferogram provenance case identity is inconsistent")
+            if provenance.get("backend") != {"name": "gamma"}:
+                raise ValueError("interferogram provenance backend is inconsistent")
+            for key, expected in identities.items():
+                if manifest.get(key) != expected:
+                    raise ValueError(f"interferogram manifest {key} is inconsistent")
+                if provenance.get(key) != expected:
+                    raise ValueError(f"interferogram provenance {key} is inconsistent")
         if manifest.get("stack_digest") != plan.stack.source_digest:
             raise ValueError("interferogram manifest stack digest is inconsistent")
         if manifest.get("polarization") != plan.case.polarization:
@@ -187,7 +233,7 @@ def _mli_commands(
     progress_sink: Callable[[str], None],
     total: int,
 ) -> tuple[dict[str, tuple[Path, Path]], int, int]:
-    mli_dir = staging / "mli"
+    mli_dir = staging / "MLI"
     mli_dir.mkdir()
     assets: dict[str, tuple[Path, Path]] = {}
     range_samples: int | None = None
@@ -453,6 +499,7 @@ def run_gamma_interferograms(
 
     if not isinstance(plan, GammaInterferogramPlan):
         raise TypeError("plan must be GammaInterferogramPlan")
+    _ = quicklook_renderer
     signature = interferogram_input_signature(plan)
     existing = _read_existing(plan, signature)
     if existing is not None:
@@ -465,9 +512,8 @@ def run_gamma_interferograms(
         )
         return existing
     delegate = command_runner or SubprocessCommandRunner()
-    log_dir = plan.case.project_root / "LOG/ANALYSIS/GAMMA/INTERFEROGRAM" / plan.case.name
+    log_dir = plan.case.case_root / "LOG/ANALYSIS/GAMMA/INTERFEROGRAM"
     _begin_logs(log_dir)
-    warnings: list[str] = []
     total = len(plan.stack.assets) + len(plan.pairs) + 2
     _event(progress_sink, event="batch_started", status="start", total=total, stage="prepare")
     try:
@@ -488,10 +534,8 @@ def run_gamma_interferograms(
                     f"{expected_height_size} bytes from MLI {width}x{lines}, got "
                     f"{actual_height_size} bytes"
                 )
-            pairs_dir = staging / "pairs"
+            pairs_dir = staging / "PAIRS"
             pairs_dir.mkdir()
-            quicklook_dir = staging / "quicklooks"
-            quicklook_dir.mkdir()
             pair_products: list[tuple[InterferogramPair, dict[str, Path]]] = []
             for offset, pair in enumerate(plan.pairs, start=len(plan.stack.assets) + 1):
                 _event(
@@ -515,16 +559,6 @@ def run_gamma_interferograms(
                     log_dir=log_dir,
                 )
                 pair_products.append((pair, products))
-                if quicklook_renderer is not None:
-                    try:
-                        quicklook_renderer(
-                            pair=pair.name,
-                            pair_dir=pair_dir,
-                            width=width,
-                            output_dir=quicklook_dir,
-                        )
-                    except Exception as error:
-                        warnings.append(f"quicklook failed for {pair.name}: {error}")
                 _event(
                     progress_sink,
                     event="item_finished",
@@ -535,37 +569,47 @@ def run_gamma_interferograms(
                     stage="interferogram",
                 )
 
+            registered_stack_project_path = _project_path(
+                plan, plan.case.registered_stack
+            )
+            baseline_manifest_project_path = _project_path(
+                plan, plan.case.baseline_manifest
+            )
+            radar_height_project_path = _project_path(plan, plan.case.radar_height)
             provenance = {
-                "baseline_manifest": str(plan.baseline.source_path),
+                "backend": {"name": "gamma"},
+                "baseline_manifest_project_path": baseline_manifest_project_path,
+                "case_id": plan.case.case_id,
                 "input_signature": signature,
-                "logs": str(log_dir),
-                "radar_height": {
-                    "path": str(plan.case.radar_height),
-                    "size_bytes": actual_height_size,
-                },
+                "log_dir_project_path": _project_path(plan, log_dir),
+                "radar_height_project_path": radar_height_project_path,
+                "radar_height_size_bytes": actual_height_size,
+                "registered_stack_project_path": registered_stack_project_path,
                 "resolved_filter_flags": {
                     "azimuth": plan.spectral_filter_azimuth,
                     "range": plan.spectral_filter_range,
                 },
+                "schema_version": 2,
             }
             (staging / "provenance.json").write_text(
                 json.dumps(provenance, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
                 encoding="utf-8",
             )
             manifest = {
-                "average_mli_path": "mli/ave_mli",
-                "baseline_manifest": str(plan.baseline.source_path),
+                "average_mli_path": "MLI/ave_mli",
+                "backend": {"name": "gamma"},
+                "baseline_manifest_project_path": baseline_manifest_project_path,
+                "case_id": plan.case.case_id,
                 "filter_flags": {
                     "azimuth": plan.spectral_filter_azimuth,
                     "range": plan.spectral_filter_range,
                 },
-                "logs": str(log_dir),
                 "looks": {"azimuth": plan.case.azimuth_looks, "range": plan.case.range_looks},
                 "mli_assets": [
                     {
-                        "data_path": f"mli/{date}.mli",
+                        "data_path": f"MLI/{date}.mli",
                         "date": date,
-                        "parameter_path": f"mli/{date}.mli.par",
+                        "parameter_path": f"MLI/{date}.mli.par",
                     }
                     for date in plan.stack.dates
                 ],
@@ -581,15 +625,13 @@ def run_gamma_interferograms(
                 ],
                 "polarization": plan.case.polarization,
                 "provenance_path": "provenance.json",
-                "radar_height": {
-                    "path": str(plan.case.radar_height),
-                    "size_bytes": actual_height_size,
-                },
+                "radar_height_project_path": radar_height_project_path,
+                "radar_height_size_bytes": actual_height_size,
                 "reference_date": plan.stack.reference_date,
-                "schema_version": 1,
+                "registered_stack_project_path": registered_stack_project_path,
+                "schema_version": 2,
                 "stack_digest": plan.stack.source_digest,
                 "status": "complete",
-                "warnings": warnings,
             }
             (staging / "interferogram_manifest.json").write_text(
                 json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
@@ -608,7 +650,7 @@ def run_gamma_interferograms(
             acquisition_count=len(plan.stack.assets),
             pair_count=len(plan.pairs),
             output_dir=plan.case.output_dir,
-            warnings=tuple(warnings),
+            warnings=(),
         )
     except BaseException:
         failed_logs = _preserve_failed_logs(log_dir)

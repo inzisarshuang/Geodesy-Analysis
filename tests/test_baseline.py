@@ -15,7 +15,7 @@ from geodesy_analysis.insar import baseline
 
 
 class BaselineTests(unittest.TestCase):
-    """Preserve pair order, solved baselines, connectivity, and light imports."""
+    """Preserve scientific network selection and light imports."""
 
     def test_import_does_not_load_matplotlib(self) -> None:
         environment = dict(os.environ)
@@ -34,31 +34,6 @@ class BaselineTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-
-    def test_reads_pair_order_and_solves_signed_perpendicular_baselines(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            source = Path(directory) / "baseline_select_SBAS_060"
-            source.write_text(
-                "20200101-20200113 10 12\n"
-                "20200113 20200125 -3 12\n"
-                "20200101-20200125 7 24\n",
-                encoding="utf-8",
-            )
-            rows = baseline.read_baseline_file(str(source))
-        self.assertEqual(
-            rows,
-            [
-                (20200101, 20200113, 10.0, 12.0),
-                (20200113, 20200125, -3.0, 12.0),
-                (20200101, 20200125, 7.0, 24.0),
-            ],
-        )
-        dates = baseline.collect_dates(rows)
-        self.assertEqual(dates, [20200101, 20200113, 20200125])
-        self.assertEqual(
-            baseline.solve_perpendicular_baselines(rows, dates, 20200101),
-            {20200101: 0.0, 20200113: 10.0, 20200125: 7.0},
-        )
 
     def test_network_selection_keeps_tree_connected_and_source_ordered(self) -> None:
         rows = [

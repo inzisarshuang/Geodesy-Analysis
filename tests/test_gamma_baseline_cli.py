@@ -16,7 +16,7 @@ class GammaBaselineCliTests(unittest.TestCase):
     """Keep dry-run read-only and the public cfg fully explained."""
 
     def _config(self, root: Path) -> Path:
-        stack = root / "PRE/RSLC"
+        stack = root / "S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET"
         data = stack / "RSLC"
         data.mkdir(parents=True)
         dates = ("20231214", "20231226")
@@ -58,12 +58,13 @@ class GammaBaselineCliTests(unittest.TestCase):
 [project]
 root = {root}
 [case:ascending]
-registered_stack = PRE/RSLC/registered_stack.json
+case_root = S1/ASCENDING_128
+registered_stack = S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json
 polarization = VV
 network_type = SBAS
 max_perpendicular_baseline = 300
 max_temporal_baseline = 40
-output_dir = ANALYSIS/GAMMA/ascending/BASELINE
+output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE
 """,
             encoding="utf-8",
         )
@@ -79,14 +80,17 @@ output_dir = ANALYSIS/GAMMA/ascending/BASELINE
             self.assertEqual(code, 0)
             payload = json.loads(output.getvalue())
             self.assertEqual(payload["case"], "ascending")
+            self.assertEqual(payload["case_id"], "S1/ASCENDING_128")
             self.assertEqual(payload["reference_date"], "20231226")
             self.assertEqual(payload["network_type"], "SBAS")
             self.assertEqual(payload["polarization"], "VV")
             self.assertEqual(payload["max_perpendicular_baseline_m"], 300.0)
             self.assertEqual(payload["max_temporal_baseline_days"], 40.0)
             self.assertEqual(payload["scene_count"], 2)
-            self.assertFalse((root / "ANALYSIS").exists())
-            self.assertFalse((root / "LOG").exists())
+            self.assertFalse(
+                (root / "S1/ASCENDING_128/ANALYSIS").exists()
+            )
+            self.assertFalse((root / "S1/ASCENDING_128/LOG").exists())
 
     def test_configuration_error_returns_two(self) -> None:
         error = io.StringIO()

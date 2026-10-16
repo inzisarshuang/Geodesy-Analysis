@@ -1,12 +1,16 @@
 # GAMMA InSAR：RSLC 到差分干涉图
 
 本文说明当前正式流程的操作顺序。命令使用 `envInSAR` 内的绝对入口，因此可从
-任意目录运行；CFG 内相对路径始终以 `[project] root` 为基准。
+任意目录运行；CFG 内相对路径始终以 `[project] root` 为基准。示例的
+`[case:main]` 使用 `case_root = S1/ASCENDING_128`：`main` 只是 `--case` 的选择
+标签，正式目录身份完全由 `case_root` 决定。
 
 ## 1. 输入检查
 
 Geodesy-Preprocessing 必须已经发布完整的 `registered_stack.json`。它应列出参考
-日期、传感器、极化和每个日期的 RSLC/参数文件。Analysis 不再扫描目录猜测输入。
+日期、传感器、极化和每个日期的 RSLC/参数文件。正式输入位置为
+`S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json`。Analysis 不再
+扫描目录猜测输入。
 
 ## 2. 基线选择
 
@@ -23,13 +27,17 @@ Geodesy-Preprocessing 必须已经发布完整的 `registered_stack.json`。它�
   --case main
 ```
 
-完成后检查网络表、PNG 和 `baseline_manifest.json`。如果只想调整图形，不重算
-网络，可运行：
+完成后检查网络表和 `baseline_manifest.json`；Analysis 不再生成 PNG。若需绘制
+或调整基线图，把 Geodesy-Visualization 的 `config_examples/baseline_plot.cfg`
+复制到项目 `config/visualization/`，然后在 `envPlot` 中运行：
 
 ```bash
-/home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-baseline-plot \
-  --config /absolute/PROJECT/config/analysis/baseline_plot.cfg --case main
+/home/yilun/miniconda3/envs/envPlot/bin/geodesy-visualization-insar-baseline \
+  --config /absolute/PROJECT/config/visualization/baseline_plot.cfg --case main
 ```
+
+该命令仅读取已完成的 `baseline_manifest.json` 及其中引用的网络表，不调用 GAMMA，
+输出位置由 Visualization CFG 决定。基线图不是下一步干涉计算的必需输入。
 
 ## 3. 干涉图生成
 
@@ -47,16 +55,22 @@ Geodesy-Preprocessing 必须已经发布完整的 `registered_stack.json`。它�
 ```
 
 完成后检查 `interferogram_manifest.json`：状态应为 `complete`，日期和干涉对数量
-应与 dry-run 一致，清单列出的 MLI、`pair.tflt` 和 `pair.cc` 等文件均应非空。
+应与 dry-run 一致，清单列出的 `MLI/`、`PAIRS/<日期对>/pair.tflt` 和 `pair.cc`
+等文件均应非空。Analysis 不创建快视图或其他渲染内容；这些内容全部由
+Geodesy-Visualization 负责。
 
 ## 4. 日志与重跑
 
-基线日志位于 `LOG/ANALYSIS/GAMMA/BASELINE/<case>/`，干涉日志位于
-`LOG/ANALYSIS/GAMMA/INTERFEROGRAM/<case>/`。干涉失败日志会改名为
-`<case>.failed-logs-N`，终端报错会给出位置。
+基线日志位于 `S1/ASCENDING_128/LOG/ANALYSIS/GAMMA/BASELINE/`，干涉日志位于
+`S1/ASCENDING_128/LOG/ANALYSIS/GAMMA/INTERFEROGRAM/`。失败日志目录会改名为
+`BASELINE.failed-logs-N` 或 `INTERFEROGRAM.failed-logs-N`，终端报错会给出位置。
 
 相同输入和参数且结果完整时命令返回 `skipped`。已有目录不完整或来源、参数发生
 变化时命令停止，不会覆盖。确认确需重算后，先由用户把旧结果移到备份目录。
+
+新生成的 baseline 和 interferogram 清单使用 portable schema v2，跨阶段引用均为
+项目相对路径；迁移期仍能读取已有 schema v1 基线清单。本次代码变更不会移动、
+复制或删除已有研究项目数据。
 
 ## 5. 当前终点
 

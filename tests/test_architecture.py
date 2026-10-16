@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import unittest
 from pathlib import Path
 
@@ -19,6 +20,49 @@ class ArchitectureTests(unittest.TestCase):
                 self.assertNotIn("sys.path", text)
                 self.assertNotIn("/mnt/beegfs", text)
                 self.assertNotIn("/home/yilun", text)
+
+    def test_analysis_has_no_visualization_runtime_dependency(self) -> None:
+        repository = Path(__file__).resolve().parents[1]
+        source_root = repository / "src"
+        for path in source_root.rglob("*.py"):
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(path=path):
+                self.assertNotIn("matplotlib", text.lower())
+                self.assertNotIn("geodesy_visualization", text)
+
+        project = (repository / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertNotIn("geodesy-analysis-baseline-plot", project)
+        self.assertNotIn("matplotlib", project.lower())
+        self.assertNotIn("plot =", project)
+        self.assertFalse(
+            (source_root / "geodesy_analysis/insar/baseline_selection/common/plot_cli.py").exists()
+        )
+        self.assertFalse(
+            (source_root / "geodesy_analysis/insar/baseline_selection/common/plot_config.py").exists()
+        )
+        self.assertFalse((repository / "config_examples/baseline_plot.cfg").exists())
+
+    def test_public_contract_has_no_legacy_analysis_layout(self) -> None:
+        repository = Path(__file__).resolve().parents[1]
+        paths = [repository / "README.md"]
+        paths.extend((repository / "config_examples").glob("*.cfg"))
+        paths.extend(
+            path
+            for path in (repository / "docs").rglob("*.md")
+            if "superpowers" not in path.parts
+        )
+        paths.extend((repository / "src").rglob("*.py"))
+        forbidden = (
+            re.compile(r"LOG/ANALYSIS/GAMMA/(?:BASELINE|INTERFEROGRAM)/<case"),
+            re.compile(r"/quicklooks(?:/|`|\s)"),
+            re.compile(r"ANALYSIS(?:/[^/\s`]+)*/FIGURES"),
+            re.compile(r"ANALYSIS/GAMMA/(?:ascending|descending|main)/"),
+        )
+        for path in paths:
+            text = path.read_text(encoding="utf-8")
+            for pattern in forbidden:
+                with self.subTest(path=path, pattern=pattern.pattern):
+                    self.assertIsNone(pattern.search(text))
 
 
 if __name__ == "__main__":

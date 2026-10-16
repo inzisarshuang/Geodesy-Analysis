@@ -47,6 +47,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
                 {
                     "baseline_manifest": str(case.baseline_manifest),
                     "case": case.name,
+                    "case_id": case.case_id,
                     "looks": {"azimuth": case.azimuth_looks, "range": case.range_looks},
                     "output_dir": str(case.output_dir),
                     "pair_count": len(plan.pairs),
