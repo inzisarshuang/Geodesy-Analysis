@@ -74,7 +74,7 @@ visualization_dir = S1/ASCENDING_128/VISUALIZATION/UNWRAPPING/GAMMA_MCF
 
 `visualization_dir` 未填写时，根据 `case_root`、阶段和方法自动产生上述标准目录；
 用户显式填写时使用手动目录。手动目录可以使用项目相对路径或绝对路径，但解析后
-必须位于研究项目根目录内，并且不得指向 Analysis 科学输出目录或输入目录。
+必须位于当前案例根目录内，并且不得指向 Analysis 科学输出目录或输入目录。
 
 `case` 继续表示轨道、数据组或滤波方法运行，不表示相位、相干性、强度图等图片
 类别。同一方法需要保留另一组输出时，用户可同时手动修改 `output_dir` 和
