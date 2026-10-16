@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import tempfile
 import unittest
 from dataclasses import replace
@@ -74,6 +75,8 @@ class _FakeGamma:
             Path(argv[4]).write_bytes(b"differential")
         elif program == "cc_wave":
             Path(argv[4]).write_bytes(b"coherence")
+        elif program in {"raspwr", "rasmph", "rasdt_pwr"}:
+            Path(argv[-1]).write_bytes(b"BMquicklook")
         return None
 
 
@@ -173,6 +176,7 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
             coherence_azimuth_window=9,
             coherence_estimator=2,
             output_dir=root / "S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA",
+            visualization_dir=root / "S1/ASCENDING_128/VISUALIZATION/INTERFEROGRAM_GENERATION/GAMMA",
         )
         return build_gamma_interferogram_plan(case)
 
@@ -222,7 +226,6 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
                 plan,
                 command_runner=fake,
                 progress_sink=progress.append,
-                quicklook_renderer=lambda **_: None,
             )
 
             programs = [call["argv"][0] for call in fake.calls]
@@ -240,6 +243,10 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
             ]
             self.assertEqual(programs[4:13], core)
             self.assertEqual(programs[13:22], core)
+            self.assertEqual(
+                programs[22:],
+                ["raspwr"] * 4 + ["rasmph", "rasdt_pwr"] * 2,
+            )
             self.assertEqual(programs.count("multi_look"), len(self.dates))
             self.assertEqual(programs.count("ave_image"), 1)
 
@@ -300,6 +307,50 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
             self.assertEqual(manifest["looks"], {"azimuth": 2, "range": 10})
             self.assertEqual([item["date"] for item in manifest["mli_assets"]], list(self.dates))
             self.assertEqual([item["pair"] for item in manifest["pairs"]], [p.name for p in plan.pairs])
+            visualization = plan.case.visualization_dir
+            self.assertEqual(
+                manifest["visualization_dir_project_path"],
+                "S1/ASCENDING_128/VISUALIZATION/INTERFEROGRAM_GENERATION/GAMMA",
+            )
+            self.assertEqual(
+                manifest["average_mli_quicklook_project_path"],
+                "S1/ASCENDING_128/VISUALIZATION/INTERFEROGRAM_GENERATION/GAMMA/ave_mli.bmp",
+            )
+            self.assertEqual(
+                [item["quicklook_project_path"] for item in manifest["mli_assets"]],
+                [
+                    f"S1/ASCENDING_128/VISUALIZATION/INTERFEROGRAM_GENERATION/GAMMA/{date}.mli.bmp"
+                    for date in self.dates
+                ],
+            )
+            for pair, item in zip(plan.pairs, manifest["pairs"]):
+                self.assertEqual(
+                    item["quicklooks"],
+                    {
+                        "coherence_project_path": (
+                            "S1/ASCENDING_128/VISUALIZATION/INTERFEROGRAM_GENERATION/"
+                            f"GAMMA/{pair.name}.cc.bmp"
+                        ),
+                        "phase_project_path": (
+                            "S1/ASCENDING_128/VISUALIZATION/INTERFEROGRAM_GENERATION/"
+                            f"GAMMA/{pair.name}.tflt.bmp"
+                        ),
+                    },
+                )
+            self.assertEqual(
+                sorted(path.name for path in visualization.iterdir()),
+                sorted(
+                    [f"{date}.mli.bmp" for date in self.dates]
+                    + ["ave_mli.bmp"]
+                    + [
+                        name
+                        for pair in plan.pairs
+                        for name in (f"{pair.name}.cc.bmp", f"{pair.name}.tflt.bmp")
+                    ]
+                ),
+            )
+            self.assertFalse((visualization / "PAIRS").exists())
+            self.assertTrue(all(path.stat().st_size for path in visualization.iterdir()))
             provenance = json.loads(
                 (output / "provenance.json").read_text(encoding="utf-8")
             )
@@ -307,9 +358,10 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
             self.assertEqual(provenance["case_id"], "S1/ASCENDING_128")
             self.assertNotIn(str(root), json.dumps(manifest, sort_keys=True))
             self.assertNotIn(str(root), json.dumps(provenance, sort_keys=True))
-            self.assertFalse((output / "quicklooks").exists())
-            self.assertFalse((output / "FIGURES").exists())
-            self.assertEqual(list(output.rglob("*.png")), [])
+            self.assertEqual(
+                provenance["visualization_dir_project_path"],
+                manifest["visualization_dir_project_path"],
+            )
             self.assertIn('"status":"complete"', progress[-1])
 
     def test_radar_height_size_mismatch_stops_before_pair_commands(self) -> None:
@@ -334,6 +386,7 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
         scenarios = (
             (_FakeGamma(fail_program="SLC_intf"), RuntimeError, "synthetic"),
             (_FakeGamma(omit_output_for="SLC_intf"), ValueError, "did not create"),
+            (_FakeGamma(omit_output_for="rasmph"), RuntimeError, "quicklook is missing"),
         )
         for fake, error_type, message in scenarios:
             with self.subTest(message=message), tempfile.TemporaryDirectory() as directory:
@@ -484,36 +537,86 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
                         progress_sink=lambda _: None,
                     )
 
-    def test_legacy_quicklook_callback_is_ignored(self) -> None:
-        calls: list[object] = []
-
-        def forbidden_quicklook(**values):
-            calls.append(values)
-            raise RuntimeError("renderer must not be called")
-
+    def test_legacy_manifest_repairs_only_quicklooks_without_touching_science(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root)
-            summary = run_gamma_interferograms(
+            run_gamma_interferograms(
                 plan,
                 command_runner=_FakeGamma(),
                 progress_sink=lambda _: None,
-                quicklook_renderer=forbidden_quicklook,
             )
-            self.assertEqual(summary.status, "complete")
-            self.assertEqual(summary.warnings, ())
-            self.assertEqual(calls, [])
-            manifest = json.loads(
-                (plan.case.output_dir / "interferogram_manifest.json").read_text(
-                    encoding="utf-8"
-                )
+            manifest_path = plan.case.output_dir / "interferogram_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest.pop("visualization_dir_project_path")
+            manifest.pop("average_mli_quicklook_project_path")
+            for item in manifest["mli_assets"]:
+                item.pop("quicklook_project_path")
+            for item in manifest["pairs"]:
+                item.pop("quicklooks")
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            provenance_path = plan.case.output_dir / "provenance.json"
+            provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+            provenance.pop("visualization_dir_project_path")
+            provenance.pop("quicklook_commands")
+            provenance_path.write_text(json.dumps(provenance), encoding="utf-8")
+            shutil.rmtree(plan.case.visualization_dir)
+            science = {
+                path: path.read_bytes()
+                for path in plan.case.output_dir.rglob("*")
+                if path.is_file() and path.name not in {"interferogram_manifest.json", "provenance.json"}
+            }
+
+            fake = _FakeGamma()
+            summary = run_gamma_interferograms(
+                plan, command_runner=fake, progress_sink=lambda _: None
             )
-            self.assertNotIn("warnings", manifest)
-            self.assertFalse((plan.case.output_dir / "quicklooks").exists())
-            for pair in plan.pairs:
-                self.assertTrue(
-                    (plan.case.output_dir / "PAIRS" / pair.name / "pair.cc").is_file()
+
+            self.assertEqual(summary.status, "repaired")
+            self.assertEqual(
+                [call["argv"][0] for call in fake.calls],
+                ["raspwr"] * 4 + ["rasmph", "rasdt_pwr"] * 2,
+            )
+            self.assertEqual({path: path.read_bytes() for path in science}, science)
+
+    def test_partial_visualization_with_unrelated_content_conflicts_untouched(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = self._plan(root)
+            run_gamma_interferograms(
+                plan, command_runner=_FakeGamma(), progress_sink=lambda _: None
+            )
+            missing = plan.case.visualization_dir / "ave_mli.bmp"
+            missing.unlink()
+            unrelated = plan.case.visualization_dir / "notes.txt"
+            unrelated.write_text("keep\n", encoding="utf-8")
+
+            fake = _FakeGamma()
+            with self.assertRaisesRegex(FileExistsError, "unexpected entry"):
+                run_gamma_interferograms(
+                    plan, command_runner=fake, progress_sink=lambda _: None
                 )
+            self.assertEqual(fake.calls, [])
+            self.assertEqual(unrelated.read_text(encoding="utf-8"), "keep\n")
+
+    def test_partial_expected_inventory_repairs_only_the_missing_bmp(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = self._plan(root)
+            run_gamma_interferograms(
+                plan, command_runner=_FakeGamma(), progress_sink=lambda _: None
+            )
+            missing = plan.case.visualization_dir / "ave_mli.bmp"
+            missing.unlink()
+
+            fake = _FakeGamma()
+            summary = run_gamma_interferograms(
+                plan, command_runner=fake, progress_sink=lambda _: None
+            )
+
+            self.assertEqual(summary.status, "repaired")
+            self.assertEqual([call["argv"][0] for call in fake.calls], ["raspwr"])
+            self.assertGreater(missing.stat().st_size, 0)
 
     def test_input_signature_is_project_location_independent(self) -> None:
         with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:

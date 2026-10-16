@@ -10,7 +10,13 @@ from pathlib import Path
 
 from geodesy_analysis.common.command import SubprocessCommandRunner
 from geodesy_analysis.common.progress import emit_progress
-from geodesy_analysis.io import atomic_output_directory
+from geodesy_analysis.insar.common.gamma_quicklooks import (
+    coherence_quicklook_command,
+    mli_quicklook_command,
+    require_nonempty_quicklook,
+    wrapped_phase_quicklook_command,
+)
+from geodesy_analysis.io import atomic_output_directory, atomic_output_path
 
 from .models import GammaInterferogramPlan, InterferogramPair
 from .publication import (
@@ -32,6 +38,13 @@ class InterferogramRunSummary:
     pair_count: int
     output_dir: Path
     warnings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class _ExistingInterferogram:
+    summary: InterferogramRunSummary
+    manifest: dict[str, object]
+    provenance: dict[str, object]
 
 
 def _event(sink: Callable[[str], None], **values: object) -> None:
@@ -62,7 +75,7 @@ def _project_path(plan: GammaInterferogramPlan, path: Path) -> str:
 
 def _read_existing(
     plan: GammaInterferogramPlan, signature: str
-) -> InterferogramRunSummary | None:
+) -> _ExistingInterferogram | None:
     output = plan.case.output_dir
     if not output.exists():
         return None
@@ -161,12 +174,16 @@ def _read_existing(
                 raise ValueError("interferogram manifest pair products are incomplete")
             for name, path in item["products"].items():
                 _published_asset(output, path, f"pair product {name}")
-        return InterferogramRunSummary(
-            status="skipped",
-            acquisition_count=len(raw_mli),
-            pair_count=len(raw_pairs),
-            output_dir=output,
-            warnings=tuple(manifest.get("warnings", ())),
+        return _ExistingInterferogram(
+            summary=InterferogramRunSummary(
+                status="skipped",
+                acquisition_count=len(raw_mli),
+                pair_count=len(raw_pairs),
+                output_dir=output,
+                warnings=tuple(manifest.get("warnings", ())),
+            ),
+            manifest=manifest,
+            provenance=provenance,
         )
     except FileExistsError:
         raise
@@ -488,6 +505,251 @@ def _pair_commands(
     return output
 
 
+def _quicklook_names(plan: GammaInterferogramPlan) -> set[str]:
+    return {
+        *(f"{date}.mli.bmp" for date in plan.stack.dates),
+        "ave_mli.bmp",
+        *(f"{pair.name}.tflt.bmp" for pair in plan.pairs),
+        *(f"{pair.name}.cc.bmp" for pair in plan.pairs),
+    }
+
+
+def _validate_visualization_inventory(plan: GammaInterferogramPlan) -> None:
+    directory = plan.case.visualization_dir
+    if not directory.exists():
+        return
+    if not directory.is_dir() or directory.is_symlink():
+        raise FileExistsError(f"visualization output is not a directory: {directory}")
+    expected = _quicklook_names(plan)
+    unexpected = sorted(path.name for path in directory.iterdir() if path.name not in expected)
+    if unexpected:
+        raise FileExistsError(
+            f"visualization directory has unexpected entry: {directory / unexpected[0]}"
+        )
+
+
+def _quicklook_metadata(
+    plan: GammaInterferogramPlan,
+) -> tuple[str, str, dict[str, str], dict[str, dict[str, str]]]:
+    directory = plan.case.visualization_dir
+    directory_path = _project_path(plan, directory)
+    mli = {
+        date: _project_path(plan, directory / f"{date}.mli.bmp")
+        for date in plan.stack.dates
+    }
+    pairs = {
+        pair.name: {
+            "coherence_project_path": _project_path(
+                plan, directory / f"{pair.name}.cc.bmp"
+            ),
+            "phase_project_path": _project_path(
+                plan, directory / f"{pair.name}.tflt.bmp"
+            ),
+        }
+        for pair in plan.pairs
+    }
+    return (
+        directory_path,
+        _project_path(plan, directory / "ave_mli.bmp"),
+        mli,
+        pairs,
+    )
+
+
+def _add_quicklook_metadata(
+    plan: GammaInterferogramPlan,
+    manifest: dict[str, object],
+    provenance: dict[str, object],
+) -> None:
+    directory, average, mli, pairs = _quicklook_metadata(plan)
+    manifest["visualization_dir_project_path"] = directory
+    manifest["average_mli_quicklook_project_path"] = average
+    for item in manifest["mli_assets"]:  # type: ignore[index]
+        item["quicklook_project_path"] = mli[item["date"]]
+    for item in manifest["pairs"]:  # type: ignore[index]
+        item["quicklooks"] = pairs[item["pair"]]
+    provenance["visualization_dir_project_path"] = directory
+    provenance["quicklook_commands"] = {
+        "coherence": {"command": "rasdt_pwr", "color_map": "cc.cm"},
+        "intensity": {"command": "raspwr", "color_map": "gray.cm"},
+        "wrapped_phase": {"command": "rasmph", "color_map": "rmg.cm"},
+    }
+
+
+def _quicklooks_complete(
+    plan: GammaInterferogramPlan, manifest: dict[str, object]
+) -> bool:
+    directory, average, mli, pairs = _quicklook_metadata(plan)
+    if manifest.get("visualization_dir_project_path") != directory:
+        return False
+    if manifest.get("average_mli_quicklook_project_path") != average:
+        return False
+    raw_mli = manifest.get("mli_assets")
+    raw_pairs = manifest.get("pairs")
+    if not isinstance(raw_mli, list) or not isinstance(raw_pairs, list):
+        return False
+    if any(
+        not isinstance(item, dict)
+        or item.get("quicklook_project_path") != mli.get(item.get("date"))
+        for item in raw_mli
+    ):
+        return False
+    if any(
+        not isinstance(item, dict)
+        or item.get("quicklooks") != pairs.get(item.get("pair"))
+        for item in raw_pairs
+    ):
+        return False
+    try:
+        for name in _quicklook_names(plan):
+            require_nonempty_quicklook(plan.case.visualization_dir / name, name)
+    except (OSError, RuntimeError):
+        return False
+    return True
+
+
+def _run_quicklook(
+    delegate,
+    command_factory,
+    destination: Path,
+    *,
+    cwd: Path,
+    log_dir: Path,
+    log_stem: str,
+    label: str,
+    atomic: bool,
+) -> None:
+    if destination.is_file() and destination.stat().st_size:
+        return
+    if atomic:
+        with atomic_output_path(destination) as temporary:
+            _run(
+                delegate,
+                command_factory(temporary),
+                cwd=cwd,
+                stdin_text=None,
+                log_dir=log_dir,
+                log_stem=log_stem,
+            )
+            require_nonempty_quicklook(temporary, label)
+        return
+    _run(
+        delegate,
+        command_factory(destination),
+        cwd=cwd,
+        stdin_text=None,
+        log_dir=log_dir,
+        log_stem=log_stem,
+    )
+    require_nonempty_quicklook(destination, label)
+
+
+def _render_quicklooks(
+    plan: GammaInterferogramPlan,
+    *,
+    mli_assets: dict[str, tuple[Path, Path]],
+    average_mli: Path,
+    pair_products: list[tuple[InterferogramPair, dict[str, Path]]],
+    width: int,
+    destination: Path,
+    delegate,
+    log_dir: Path,
+    atomic_files: bool,
+) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    for date in plan.stack.dates:
+        target = destination / f"{date}.mli.bmp"
+        _run_quicklook(
+            delegate,
+            lambda output, data=mli_assets[date][0]: mli_quicklook_command(
+                data, width, output
+            ),
+            target,
+            cwd=destination,
+            log_dir=log_dir,
+            log_stem=f"quicklook_{date}_mli",
+            label=f"MLI quicklook for {date}",
+            atomic=atomic_files,
+        )
+    _run_quicklook(
+        delegate,
+        lambda output: mli_quicklook_command(average_mli, width, output),
+        destination / "ave_mli.bmp",
+        cwd=destination,
+        log_dir=log_dir,
+        log_stem="quicklook_ave_mli",
+        label="average MLI quicklook",
+        atomic=atomic_files,
+    )
+    for pair, products in pair_products:
+        _run_quicklook(
+            delegate,
+            lambda output, data=products["differential_interferogram"]: (
+                wrapped_phase_quicklook_command(data, width, output)
+            ),
+            destination / f"{pair.name}.tflt.bmp",
+            cwd=destination,
+            log_dir=log_dir,
+            log_stem=f"quicklook_{pair.name}_phase",
+            label=f"wrapped phase quicklook for {pair.name}",
+            atomic=atomic_files,
+        )
+        _run_quicklook(
+            delegate,
+            lambda output, data=products["coherence"]: coherence_quicklook_command(
+                data, width, output, background=None
+            ),
+            destination / f"{pair.name}.cc.bmp",
+            cwd=destination,
+            log_dir=log_dir,
+            log_stem=f"quicklook_{pair.name}_coherence",
+            label=f"coherence quicklook for {pair.name}",
+            atomic=atomic_files,
+        )
+
+
+def _existing_science_assets(
+    plan: GammaInterferogramPlan, manifest: dict[str, object]
+) -> tuple[
+    dict[str, tuple[Path, Path]],
+    Path,
+    list[tuple[InterferogramPair, dict[str, Path]]],
+    int,
+]:
+    output = plan.case.output_dir
+    raw_mli = manifest["mli_assets"]
+    raw_pairs = manifest["pairs"]
+    mli_assets = {
+        item["date"]: (
+            _published_asset(output, item["data_path"], "MLI"),
+            _published_asset(output, item["parameter_path"], "MLI parameters"),
+        )
+        for item in raw_mli  # type: ignore[union-attr]
+    }
+    average = _published_asset(output, manifest["average_mli_path"], "average MLI")
+    pair_by_name = {item["pair"]: item for item in raw_pairs}  # type: ignore[union-attr]
+    pair_products = [
+        (
+            pair,
+            {
+                name: _published_asset(output, value, f"pair product {name}")
+                for name, value in pair_by_name[pair.name]["products"].items()
+            },
+        )
+        for pair in plan.pairs
+    ]
+    width = gamma_parameter(mli_assets[plan.stack.dates[0]][1], "range_samples")
+    return mli_assets, average, pair_products, width
+
+
+def _write_json_atomic(path: Path, payload: dict[str, object]) -> None:
+    with atomic_output_path(path) as temporary:
+        temporary.write_text(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+
 def run_gamma_interferograms(
     plan: GammaInterferogramPlan,
     *,
@@ -503,14 +765,80 @@ def run_gamma_interferograms(
     signature = interferogram_input_signature(plan)
     existing = _read_existing(plan, signature)
     if existing is not None:
+        _validate_visualization_inventory(plan)
+        if _quicklooks_complete(plan, existing.manifest):
+            _event(
+                progress_sink,
+                event="batch_finished",
+                status="skipped",
+                total=existing.summary.pair_count,
+                stage="publish",
+            )
+            return existing.summary
+        delegate = command_runner or SubprocessCommandRunner()
+        log_dir = plan.case.case_root / "LOG/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA"
+        _begin_logs(log_dir)
+        try:
+            mli_assets, average_mli, pair_products, width = _existing_science_assets(
+                plan, existing.manifest
+            )
+            if plan.case.visualization_dir.exists():
+                _render_quicklooks(
+                    plan,
+                    mli_assets=mli_assets,
+                    average_mli=average_mli,
+                    pair_products=pair_products,
+                    width=width,
+                    destination=plan.case.visualization_dir,
+                    delegate=delegate,
+                    log_dir=log_dir,
+                    atomic_files=True,
+                )
+            else:
+                with atomic_output_directory(plan.case.visualization_dir) as visual_staging:
+                    _render_quicklooks(
+                        plan,
+                        mli_assets=mli_assets,
+                        average_mli=average_mli,
+                        pair_products=pair_products,
+                        width=width,
+                        destination=visual_staging,
+                        delegate=delegate,
+                        log_dir=log_dir,
+                        atomic_files=False,
+                    )
+            _add_quicklook_metadata(plan, existing.manifest, existing.provenance)
+            _write_json_atomic(
+                plan.case.output_dir / "provenance.json", existing.provenance
+            )
+            _write_json_atomic(
+                plan.case.output_dir / "interferogram_manifest.json", existing.manifest
+            )
+        except BaseException:
+            failed_logs = _preserve_failed_logs(log_dir)
+            _event(
+                progress_sink,
+                event="batch_finished",
+                status="failed",
+                total=existing.summary.pair_count,
+                stage="failed",
+                failure_logs=str(failed_logs),
+            )
+            raise
         _event(
             progress_sink,
             event="batch_finished",
-            status="skipped",
-            total=existing.pair_count,
+            status="repaired",
+            total=existing.summary.pair_count,
             stage="publish",
         )
-        return existing
+        return InterferogramRunSummary(
+            status="repaired",
+            acquisition_count=existing.summary.acquisition_count,
+            pair_count=existing.summary.pair_count,
+            output_dir=existing.summary.output_dir,
+            warnings=existing.summary.warnings,
+        )
     delegate = command_runner or SubprocessCommandRunner()
     log_dir = plan.case.case_root / "LOG/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA"
     _begin_logs(log_dir)
@@ -576,7 +904,7 @@ def run_gamma_interferograms(
                 plan, plan.case.baseline_manifest
             )
             radar_height_project_path = _project_path(plan, plan.case.radar_height)
-            provenance = {
+            provenance: dict[str, object] = {
                 "backend": {"name": "gamma"},
                 "baseline_manifest_project_path": baseline_manifest_project_path,
                 "case_id": plan.case.case_id,
@@ -591,11 +919,7 @@ def run_gamma_interferograms(
                 },
                 "schema_version": 2,
             }
-            (staging / "provenance.json").write_text(
-                json.dumps(provenance, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
-                encoding="utf-8",
-            )
-            manifest = {
+            manifest: dict[str, object] = {
                 "average_mli_path": "MLI/ave_mli",
                 "backend": {"name": "gamma"},
                 "baseline_manifest_project_path": baseline_manifest_project_path,
@@ -633,10 +957,29 @@ def run_gamma_interferograms(
                 "stack_digest": plan.stack.source_digest,
                 "status": "complete",
             }
-            (staging / "interferogram_manifest.json").write_text(
-                json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
-                encoding="utf-8",
-            )
+            with atomic_output_directory(plan.case.visualization_dir) as visual_staging:
+                _render_quicklooks(
+                    plan,
+                    mli_assets=mli_assets,
+                    average_mli=staging / "MLI/ave_mli",
+                    pair_products=pair_products,
+                    width=width,
+                    destination=visual_staging,
+                    delegate=delegate,
+                    log_dir=log_dir,
+                    atomic_files=False,
+                )
+                _add_quicklook_metadata(plan, manifest, provenance)
+                (staging / "provenance.json").write_text(
+                    json.dumps(provenance, ensure_ascii=False, sort_keys=True, indent=2)
+                    + "\n",
+                    encoding="utf-8",
+                )
+                (staging / "interferogram_manifest.json").write_text(
+                    json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2)
+                    + "\n",
+                    encoding="utf-8",
+                )
         _event(
             progress_sink,
             event="batch_finished",
