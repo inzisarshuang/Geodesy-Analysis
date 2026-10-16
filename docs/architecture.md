@@ -28,6 +28,8 @@ This repository is not yet the default implementation.
 - `insar/baseline_selection/common/`：不绑定处理软件的基线读取与绘图。
 - `insar/baseline_selection/gamma/`：GAMMA 基线配置、计划、执行和发布。
 - `insar/interferogram_generation/gamma/`：GAMMA 干涉配置、跨阶段检查、逐对执行和发布。
+- `insar/filtering/`：公共清单、配置、计划与发布；`methods/` 隔离 NL-InSAR、
+  GAMMA BM3D 和 GAMMA ADF 的科学实现。
 
 卫星差异在 PRE 结束前消化；进入 Analysis 后统一消费雷达坐标 RSLC。处理软件差异
 则保留在 `gamma/`、未来的 `isce/` 等独立目录，避免混用命令和参数。
@@ -49,6 +51,8 @@ Analysis 只读取 `registered_stack.json`，不扫描 PRE 文件夹猜测影像
 - `ANALYSIS/BASELINE_SELECTION/GAMMA/` 与 `ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA/` 作为科学输出；
 - `INTERFEROGRAM/MLI/` 与 `INTERFEROGRAM/PAIRS/<日期对>/` 组织自有资产；
 - `LOG/ANALYSIS/BASELINE_SELECTION/GAMMA/` 与 `LOG/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA/` 保存日志。
+- `ANALYSIS/FILTERING/<METHOD>/` 与 `LOG/ANALYSIS/FILTERING/<METHOD>/` 按滤波方法
+  保存统一产品和日志；不引入 `main`、`test` 或强制 `run_id`。
 
 新 writer 只发布 portable schema v2：同一清单拥有的资产使用清单相对路径，跨阶段
 引用使用明确命名的项目相对字段。迁移期 reader 仍接受 schema v1。Analysis 不拥有

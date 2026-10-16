@@ -59,11 +59,32 @@ Geodesy-Preprocessing 必须已经发布完整的 `registered_stack.json`。它�
 等文件均应非空。Analysis 不创建快视图或其他渲染内容；这些内容全部由
 Geodesy-Visualization 负责。
 
-## 4. 日志与重跑
+## 4. 滤波
+
+复制 `config_examples/insar_filtering.cfg` 到项目 `config/analysis/`。每个 case 显式
+选择 `nl_insar`、`gamma_bm3d` 或 `gamma_adf`，并读取上一阶段完整的
+`interferogram_manifest.json`。未填写 `output_dir` 时自动落到
+`ANALYSIS/FILTERING/<METHOD>`；填写后使用项目根内的指定目录。
+
+```bash
+/home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-filtering \
+  --config /absolute/PROJECT/config/analysis/insar_filtering.cfg --dry-run
+
+/home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-filtering \
+  --config /absolute/PROJECT/config/analysis/insar_filtering.cfg --case gamma_bm3d
+```
+
+省略 `--case` 会按 CFG 顺序执行全部 case。同一方法的不同参数若需并存，由用户
+手动指定新的 `output_dir`；程序不生成 `main`、`test` 或编号 `run_id`。三种方法
+统一发布 `pairs/<日期对>/pair.tflt.filt`、`pair.coh.filt`、`coh_ave.coh` 和
+`filtering_manifest.json`。
+
+## 5. 日志与重跑
 
 基线日志位于 `S1/ASCENDING_128/LOG/ANALYSIS/BASELINE_SELECTION/GAMMA/`，干涉日志位于
-`S1/ASCENDING_128/LOG/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA/`。失败日志目录会改名为
-`BASELINE.failed-logs-N` 或 `INTERFEROGRAM.failed-logs-N`，终端报错会给出位置。
+`S1/ASCENDING_128/LOG/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA/`，滤波日志位于
+`S1/ASCENDING_128/LOG/ANALYSIS/FILTERING/<METHOD>/`。失败日志目录会追加
+`failed-logs-N`，终端报错会给出位置。
 
 相同输入和参数且结果完整时命令返回 `skipped`。已有目录不完整或来源、参数发生
 变化时命令停止，不会覆盖。确认确需重算后，先由用户把旧结果移到备份目录。
@@ -72,7 +93,7 @@ Geodesy-Visualization 负责。
 项目相对路径；迁移期仍能读取已有 schema v1 基线清单。本次代码变更不会移动、
 复制或删除已有研究项目数据。
 
-## 5. 当前终点
+## 6. 当前终点
 
-当前链条止于差分干涉图与相干性清单。滤波、解缠、大气改正和时序分析属于接下来
+当前链条止于三种方法的统一滤波清单。解缠、大气改正和时序分析属于接下来
 的 Analysis 阶段，不应把本流程的完成误解为完整 InSAR 反演已经完成。
