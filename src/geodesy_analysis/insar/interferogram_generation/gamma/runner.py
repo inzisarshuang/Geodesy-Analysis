@@ -95,7 +95,14 @@ def _read_existing(
             if schema_version == 1
             else signature
         )
-        if provenance.get("input_signature") != expected_signature:
+        legacy_signature_unrecoverable = (
+            schema_version == 1
+            and provenance.get("input_signature") != expected_signature
+        )
+        if (
+            provenance.get("input_signature") != expected_signature
+            and not legacy_signature_unrecoverable
+        ):
             raise FileExistsError(
                 f"interferogram output was produced from different inputs: {output}"
             )
@@ -181,7 +188,15 @@ def _read_existing(
                 acquisition_count=len(raw_mli),
                 pair_count=len(raw_pairs),
                 output_dir=output,
-                warnings=tuple(manifest.get("warnings", ())),
+                warnings=tuple(manifest.get("warnings", ()))
+                + (
+                    (
+                        "legacy input signature could not be reproduced; "
+                        "science was validated from the published manifest",
+                    )
+                    if legacy_signature_unrecoverable
+                    else ()
+                ),
             ),
             manifest=manifest,
             provenance=provenance,

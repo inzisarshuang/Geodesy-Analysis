@@ -471,6 +471,50 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
             self.assertEqual(summary.status, "skipped")
             self.assertEqual(fake.calls, [])
 
+    def test_legacy_schema_one_can_repair_quicklooks_when_signature_is_unrecoverable(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = self._plan(root)
+            run_gamma_interferograms(
+                plan, command_runner=_FakeGamma(), progress_sink=lambda _: None
+            )
+            manifest_path = plan.case.output_dir / "interferogram_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["schema_version"] = 1
+            for key in (
+                "average_mli_quicklook_project_path",
+                "backend",
+                "baseline_manifest_project_path",
+                "case_id",
+                "radar_height_project_path",
+                "registered_stack_project_path",
+                "scientific_manifest_digest",
+                "visualization_dir_project_path",
+            ):
+                manifest.pop(key, None)
+            for item in manifest["mli_assets"]:
+                item.pop("quicklook_project_path")
+            for item in manifest["pairs"]:
+                item.pop("quicklooks")
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            provenance_path = plan.case.output_dir / "provenance.json"
+            provenance = {"input_signature": "unrecoverable-legacy-signature"}
+            provenance_path.write_text(json.dumps(provenance), encoding="utf-8")
+            shutil.rmtree(plan.case.visualization_dir)
+
+            fake = _FakeGamma()
+            summary = run_gamma_interferograms(
+                plan, command_runner=fake, progress_sink=lambda _: None
+            )
+
+            self.assertEqual(summary.status, "repaired")
+            self.assertEqual(
+                [call["argv"][0] for call in fake.calls],
+                ["raspwr"] * 4 + ["rasmph", "rasdt_pwr"] * 2,
+            )
+
     def test_incomplete_existing_output_conflicts_instead_of_restarting(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

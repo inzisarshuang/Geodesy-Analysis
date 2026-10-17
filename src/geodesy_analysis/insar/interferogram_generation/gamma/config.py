@@ -165,14 +165,14 @@ def load_gamma_interferogram_config(path: Path) -> tuple[GammaInterferogramCase,
 
         paths = bind_analysis_case(root, name, values["case_root"])
         registered_stack = resolve_case_input(paths, values["registered_stack"])
-        expected_stack = (
-            paths.case_root
-            / "PRE/GAMMA/RSLC_SUBSET/registered_stack.json"
-        ).resolve()
-        if registered_stack != expected_stack:
+        expected_stacks = {
+            (paths.case_root / "PRE/GAMMA/RSLC/registered_stack.json").resolve(),
+            (paths.case_root / "PRE/GAMMA/RSLC_SUBSET/registered_stack.json").resolve(),
+        }
+        if registered_stack not in expected_stacks:
             raise ValueError(
-                f"{source}: registered_stack must be the canonical case PRE input: "
-                f"{expected_stack}"
+                f"{source}: registered_stack must be a canonical case PRE input: "
+                f"{', '.join(str(path) for path in sorted(expected_stacks))}"
             )
         baseline_manifest = resolve_case_input(paths, values["baseline_manifest"])
         expected_baseline = (

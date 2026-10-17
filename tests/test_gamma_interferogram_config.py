@@ -168,6 +168,22 @@ output_dir = S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA
             )
             self.assertEqual(case.coherence_estimator, 1)
 
+    def test_accepts_full_rslc_stack_when_no_subset_stack_is_selected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._inputs(root)
+            full_stack = root / "S1/ASCENDING_128/PRE/GAMMA/RSLC/registered_stack.json"
+            full_stack.parent.mkdir(parents=True)
+            full_stack.write_text("input\n", encoding="utf-8")
+            body = self._body(root).replace(
+                "PRE/GAMMA/RSLC_SUBSET/registered_stack.json",
+                "PRE/GAMMA/RSLC/registered_stack.json",
+            )
+
+            (case,) = load_gamma_interferogram_config(self._write(root, body))
+
+            self.assertEqual(case.registered_stack, full_stack.resolve())
+
     def test_rejects_missing_required_unknown_and_invalid_values(self) -> None:
         replacements = (
             ("range_looks = 10", "", "missing keys"),
