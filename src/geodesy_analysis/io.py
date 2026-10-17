@@ -62,4 +62,55 @@ def atomic_output_directory(destination: Path) -> Iterator[Path]:
         raise
 
 
-__all__ = ["atomic_output_directory", "atomic_output_path"]
+@contextmanager
+def atomic_output_directories(
+    *destinations: Path,
+) -> Iterator[tuple[Path, ...]]:
+    """Stage several directories and publish them as one recoverable unit."""
+
+    outputs = tuple(Path(destination) for destination in destinations)
+    if len(outputs) < 2:
+        raise ValueError("at least two output directories are required")
+    if len({output.resolve() for output in outputs}) != len(outputs):
+        raise ValueError("output directories must be distinct")
+    staging: list[Path] = []
+    published: list[tuple[Path, int]] = []
+    try:
+        for output in outputs:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            if output.exists() or output.is_symlink():
+                raise FileExistsError(f"output directory already exists: {output}")
+            staging.append(
+                Path(
+                    tempfile.mkdtemp(
+                        prefix=f".{output.name}.",
+                        suffix=".stage",
+                        dir=output.parent,
+                    )
+                )
+            )
+        yield tuple(staging)
+        for output in outputs:
+            if output.exists() or output.is_symlink():
+                raise FileExistsError(f"output directory already exists: {output}")
+        for temporary, output in zip(staging, outputs):
+            inode = temporary.stat(follow_symlinks=False).st_ino
+            os.replace(temporary, output)
+            published.append((output, inode))
+    except BaseException:
+        for output, inode in reversed(published):
+            try:
+                if output.stat(follow_symlinks=False).st_ino == inode:
+                    shutil.rmtree(output)
+            except FileNotFoundError:
+                pass
+        for temporary in staging:
+            shutil.rmtree(temporary, ignore_errors=True)
+        raise
+
+
+__all__ = [
+    "atomic_output_directories",
+    "atomic_output_directory",
+    "atomic_output_path",
+]

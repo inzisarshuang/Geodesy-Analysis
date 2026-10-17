@@ -113,7 +113,7 @@ def unwrapped_phase_quicklook_command(
 def require_nonempty_quicklook(path: Path, label: str) -> Path:
     """Require a GAMMA DISP invocation to have written a nonempty file."""
 
-    if not path.is_file():
+    if path.is_symlink() or not path.is_file():
         raise RuntimeError(f"{label} quicklook is missing: {path}")
     if path.stat().st_size == 0:
         raise RuntimeError(f"{label} quicklook is empty: {path}")

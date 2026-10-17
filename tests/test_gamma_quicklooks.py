@@ -152,7 +152,7 @@ class GammaQuicklookTests(unittest.TestCase):
             ),
         )
 
-    def test_validation_rejects_missing_and_empty_outputs(self) -> None:
+    def test_validation_requires_a_nonempty_regular_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             missing = root / "missing.bmp"
@@ -162,6 +162,16 @@ class GammaQuicklookTests(unittest.TestCase):
             empty.touch()
             with self.assertRaisesRegex(RuntimeError, "phase.*empty"):
                 require_nonempty_quicklook(empty, "phase")
+            directory_path = root / "directory.bmp"
+            directory_path.mkdir()
+            with self.assertRaisesRegex(RuntimeError, "phase.*missing"):
+                require_nonempty_quicklook(directory_path, "phase")
+            external = root / "external.bmp"
+            external.write_bytes(b"BM")
+            symlink = root / "symlink.bmp"
+            symlink.symlink_to(external)
+            with self.assertRaisesRegex(RuntimeError, "phase.*missing"):
+                require_nonempty_quicklook(symlink, "phase")
             complete = root / "complete.bmp"
             complete.write_bytes(b"BM")
             self.assertEqual(require_nonempty_quicklook(complete, "phase"), complete)

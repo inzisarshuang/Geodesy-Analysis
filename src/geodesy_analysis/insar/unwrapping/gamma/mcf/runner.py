@@ -16,7 +16,11 @@ from geodesy_analysis.insar.common.gamma_quicklooks import (
     require_nonempty_quicklook,
     unwrapped_phase_quicklook_command,
 )
-from geodesy_analysis.io import atomic_output_directory, atomic_output_path
+from geodesy_analysis.io import (
+    atomic_output_directories,
+    atomic_output_directory,
+    atomic_output_path,
+)
 
 from .mask import ReferencePoint, build_unwrapping_mask, resolve_reference_point
 from .models import GammaMcfPlan, UnwrappingPair
@@ -155,7 +159,11 @@ def _validate_visualization_inventory(plan: GammaMcfPlan) -> None:
     if not directory.is_dir() or directory.is_symlink():
         raise FileExistsError(f"visualization output is not a directory: {directory}")
     expected = _quicklook_names(plan)
-    unexpected = sorted(path.name for path in directory.iterdir() if path.name not in expected)
+    unexpected = sorted(
+        path.name
+        for path in directory.iterdir()
+        if path.name not in expected or path.is_symlink() or not path.is_file()
+    )
     if unexpected:
         raise FileExistsError(
             f"visualization directory has unexpected entry: {directory / unexpected[0]}"
@@ -342,104 +350,105 @@ def run_gamma_mcf(
     total = len(plan.pairs) + 1
     _event(sink, event="batch_started", status="start", stage="prepare", total=total)
     try:
-        with atomic_output_directory(plan.case.output_dir) as staging:
+        with atomic_output_directories(
+            plan.case.visualization_dir, plan.case.output_dir
+        ) as (visual_staging, staging):
             mask = build_unwrapping_mask(plan, staging)
             reference = resolve_reference_point(plan, mask)
             pairs_dir = staging / "pairs"
             pairs_dir.mkdir()
             products: list[tuple[UnwrappingPair, Path, int]] = []
             expected_size = plan.width * plan.lines * 4
-            with atomic_output_directory(plan.case.visualization_dir) as visual_staging:
-                for index, pair in enumerate(plan.pairs, start=1):
-                    _event(sink, event="item_started", status="start", item=pair.name, index=index, total=total, stage="unwrap")
-                    pair_dir = pairs_dir / pair.name
-                    pair_dir.mkdir()
-                    output = pair_dir / "pair.tflt.filt.unw"
-                    delegate.run(
-                        mcf_command(pair, plan, mask.final_mask, reference, output),
-                        cwd=pair_dir,
-                        stdin_text=None,
-                        stdout_path=log_dir / f"{pair.name}.mcf.stdout.log",
-                        stderr_path=log_dir / f"{pair.name}.mcf.stderr.log",
-                    )
-                    if not output.is_file() or output.stat().st_size != expected_size:
-                        raise ValueError(f"MCF unwrapped raster byte size mismatch: {output}")
-                    values = np.memmap(output, dtype=">f4", mode="r")
-                    finite_count = int(np.count_nonzero(np.isfinite(values)))
-                    del values
-                    if finite_count == 0:
-                        raise ValueError(f"MCF unwrapped raster contains no finite values: {output}")
-                    products.append((pair, output, finite_count))
-                    _run_quicklook(
-                        plan,
-                        pair,
-                        output,
-                        destination=visual_staging,
-                        delegate=delegate,
-                        log_dir=log_dir,
-                        atomic=False,
-                    )
-                    _event(sink, event="item_finished", status="complete", item=pair.name, index=index, total=total, stage="unwrap")
-                reference_payload = {
-                    "azimuth_index": reference.azimuth_index,
-                    "coherence": reference.coherence,
-                    "command_azimuth": reference.command_azimuth,
-                    "command_range": reference.command_range,
-                    "mode": reference.mode,
-                    "range_index": reference.range_index,
-                }
-                provenance: dict[str, object] = {
-                    "case_id": plan.case.case_id,
-                    "filtering_manifest_project_path": _project_path(plan, plan.filtering.source_path),
-                    "filtering_manifest_digest": plan.filtering.source_digest,
-                    "filtering_method": plan.filtering.method,
-                    "input_signature": signature,
-                    "log_dir_project_path": _project_path(plan, log_dir),
-                    "mcf_mode": plan.case.mcf_mode,
-                    "reference": reference_payload,
-                    "schema_version": 2,
-                }
-                manifest: dict[str, object] = {
-                    "case_id": plan.case.case_id,
-                    "filtering_manifest_digest": plan.filtering.source_digest,
-                    "filtering_manifest_project_path": _project_path(plan, plan.filtering.source_path),
-                    "filtering_method": plan.filtering.method,
-                    "grid": {"lines": plan.lines, "width": plan.width},
-                    "input_signature": signature,
-                    "mask": {
-                        "binary_mask_path": mask.binary_mask.relative_to(staging).as_posix(),
-                        "final_mask_path": mask.final_mask.relative_to(staging).as_posix(),
-                        "metadata_path": mask.metadata.relative_to(staging).as_posix(),
-                        "valid_count": mask.valid_count,
-                        "valid_ratio": mask.valid_ratio,
-                    },
-                    "mcf_mode": plan.case.mcf_mode,
-                    "method": "gamma_mcf",
-                    "pair_count": len(products),
-                    "pairs": [
-                        {
-                            "finite_count": finite,
-                            "pair": pair.name,
-                            "unwrapped_path": output.relative_to(staging).as_posix(),
-                        }
-                        for pair, output, finite in products
-                    ],
-                    "provenance_path": "provenance.json",
-                    "reference": reference_payload,
-                    "schema_version": 2,
-                    "status": "complete",
-                }
-                _add_quicklook_metadata(plan, manifest, provenance)
-                (staging / "provenance.json").write_text(
-                    json.dumps(provenance, ensure_ascii=False, sort_keys=True, indent=2)
-                    + "\n",
-                    encoding="utf-8",
+            for index, pair in enumerate(plan.pairs, start=1):
+                _event(sink, event="item_started", status="start", item=pair.name, index=index, total=total, stage="unwrap")
+                pair_dir = pairs_dir / pair.name
+                pair_dir.mkdir()
+                output = pair_dir / "pair.tflt.filt.unw"
+                delegate.run(
+                    mcf_command(pair, plan, mask.final_mask, reference, output),
+                    cwd=pair_dir,
+                    stdin_text=None,
+                    stdout_path=log_dir / f"{pair.name}.mcf.stdout.log",
+                    stderr_path=log_dir / f"{pair.name}.mcf.stderr.log",
                 )
-                (staging / "unwrapping_manifest.json").write_text(
-                    json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2)
-                    + "\n",
-                    encoding="utf-8",
+                if not output.is_file() or output.stat().st_size != expected_size:
+                    raise ValueError(f"MCF unwrapped raster byte size mismatch: {output}")
+                values = np.memmap(output, dtype=">f4", mode="r")
+                finite_count = int(np.count_nonzero(np.isfinite(values)))
+                del values
+                if finite_count == 0:
+                    raise ValueError(f"MCF unwrapped raster contains no finite values: {output}")
+                products.append((pair, output, finite_count))
+                _run_quicklook(
+                    plan,
+                    pair,
+                    output,
+                    destination=visual_staging,
+                    delegate=delegate,
+                    log_dir=log_dir,
+                    atomic=False,
                 )
+                _event(sink, event="item_finished", status="complete", item=pair.name, index=index, total=total, stage="unwrap")
+            reference_payload = {
+                "azimuth_index": reference.azimuth_index,
+                "coherence": reference.coherence,
+                "command_azimuth": reference.command_azimuth,
+                "command_range": reference.command_range,
+                "mode": reference.mode,
+                "range_index": reference.range_index,
+            }
+            provenance: dict[str, object] = {
+                "case_id": plan.case.case_id,
+                "filtering_manifest_project_path": _project_path(plan, plan.filtering.source_path),
+                "filtering_manifest_digest": plan.filtering.source_digest,
+                "filtering_method": plan.filtering.method,
+                "input_signature": signature,
+                "log_dir_project_path": _project_path(plan, log_dir),
+                "mcf_mode": plan.case.mcf_mode,
+                "reference": reference_payload,
+                "schema_version": 2,
+            }
+            manifest: dict[str, object] = {
+                "case_id": plan.case.case_id,
+                "filtering_manifest_digest": plan.filtering.source_digest,
+                "filtering_manifest_project_path": _project_path(plan, plan.filtering.source_path),
+                "filtering_method": plan.filtering.method,
+                "grid": {"lines": plan.lines, "width": plan.width},
+                "input_signature": signature,
+                "mask": {
+                    "binary_mask_path": mask.binary_mask.relative_to(staging).as_posix(),
+                    "final_mask_path": mask.final_mask.relative_to(staging).as_posix(),
+                    "metadata_path": mask.metadata.relative_to(staging).as_posix(),
+                    "valid_count": mask.valid_count,
+                    "valid_ratio": mask.valid_ratio,
+                },
+                "mcf_mode": plan.case.mcf_mode,
+                "method": "gamma_mcf",
+                "pair_count": len(products),
+                "pairs": [
+                    {
+                        "finite_count": finite,
+                        "pair": pair.name,
+                        "unwrapped_path": output.relative_to(staging).as_posix(),
+                    }
+                    for pair, output, finite in products
+                ],
+                "provenance_path": "provenance.json",
+                "reference": reference_payload,
+                "schema_version": 2,
+                "status": "complete",
+            }
+            _add_quicklook_metadata(plan, manifest, provenance)
+            (staging / "provenance.json").write_text(
+                json.dumps(provenance, ensure_ascii=False, sort_keys=True, indent=2)
+                + "\n",
+                encoding="utf-8",
+            )
+            (staging / "unwrapping_manifest.json").write_text(
+                json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2)
+                + "\n",
+                encoding="utf-8",
+            )
         _event(sink, event="batch_finished", status="complete", stage="publish", index=total, total=total)
         return GammaMcfRunSummary("complete", len(plan.pairs), plan.case.output_dir)
     except BaseException:

@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 
@@ -212,6 +213,50 @@ class GammaMcfRunnerTests(unittest.TestCase):
                 run_gamma_mcf(plan, command_runner=conflict, progress_sink=lambda _: None)
             self.assertEqual(conflict.calls, [])
             self.assertEqual(unrelated.read_text(encoding="utf-8"), "keep\n")
+
+    def test_expected_quicklook_name_cannot_be_a_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = self._plan(root)
+            run_gamma_mcf(plan, command_runner=_FakeMcf(), progress_sink=lambda _: None)
+            target = (
+                plan.case.visualization_dir
+                / f"{plan.pairs[0].name}.tflt.filt.unw.bmp"
+            )
+            target.unlink()
+            outside = root / "outside.bmp"
+            outside.write_bytes(b"external")
+            target.symlink_to(outside)
+
+            with self.assertRaisesRegex(FileExistsError, "unexpected entry"):
+                run_gamma_mcf(
+                    plan, command_runner=_FakeMcf(), progress_sink=lambda _: None
+                )
+
+    def test_science_publication_failure_rolls_back_new_visualization(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = self._plan(root)
+            real_replace = __import__("os").replace
+
+            def fail_science_publication(source, destination):
+                if Path(destination) == plan.case.output_dir:
+                    raise OSError("synthetic science publication failure")
+                return real_replace(source, destination)
+
+            with patch(
+                "geodesy_analysis.io.os.replace",
+                side_effect=fail_science_publication,
+            ):
+                with self.assertRaisesRegex(OSError, "science publication failure"):
+                    run_gamma_mcf(
+                        plan,
+                        command_runner=_FakeMcf(),
+                        progress_sink=lambda _: None,
+                    )
+
+            self.assertFalse(plan.case.output_dir.exists())
+            self.assertFalse(plan.case.visualization_dir.exists())
 
     def test_filter_quicklook_metadata_does_not_invalidate_restart(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

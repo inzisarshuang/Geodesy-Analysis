@@ -8,6 +8,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 
@@ -254,6 +255,47 @@ class FilteringRunnerTests(unittest.TestCase):
                 run_filtering(plan, command_runner=conflict, progress_sink=lambda _: None)
             self.assertEqual(conflict.calls, [])
             self.assertEqual(unrelated.read_text(encoding="utf-8"), "keep\n")
+
+    def test_expected_quicklook_name_cannot_be_a_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = self._plan(root, "gamma_adf")
+            run_filtering(plan, command_runner=_FakeGamma(), progress_sink=lambda _: None)
+            target = plan.case.visualization_dir / "20231226-20240131.tflt.filt.bmp"
+            target.unlink()
+            outside = root / "outside.bmp"
+            outside.write_bytes(b"external")
+            target.symlink_to(outside)
+
+            with self.assertRaisesRegex(FileExistsError, "unexpected entry"):
+                run_filtering(
+                    plan, command_runner=_FakeGamma(), progress_sink=lambda _: None
+                )
+
+    def test_science_publication_failure_rolls_back_new_visualization(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = self._plan(root, "gamma_adf")
+            real_replace = __import__("os").replace
+
+            def fail_science_publication(source, destination):
+                if Path(destination) == plan.case.output_dir:
+                    raise OSError("synthetic science publication failure")
+                return real_replace(source, destination)
+
+            with patch(
+                "geodesy_analysis.io.os.replace",
+                side_effect=fail_science_publication,
+            ):
+                with self.assertRaisesRegex(OSError, "science publication failure"):
+                    run_filtering(
+                        plan,
+                        command_runner=_FakeGamma(),
+                        progress_sink=lambda _: None,
+                    )
+
+            self.assertFalse(plan.case.output_dir.exists())
+            self.assertFalse(plan.case.visualization_dir.exists())
 
     def _assert_publication(self, plan, method: str, expected_mean: float | None) -> None:
         output = plan.case.output_dir

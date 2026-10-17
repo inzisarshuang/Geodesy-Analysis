@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 from geodesy_analysis.common.case_paths import bind_analysis_case
 from geodesy_analysis.insar.interferogram_generation.gamma.models import (
@@ -471,7 +472,7 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
             self.assertEqual(summary.status, "skipped")
             self.assertEqual(fake.calls, [])
 
-    def test_legacy_schema_one_can_repair_quicklooks_when_signature_is_unrecoverable(
+    def test_legacy_schema_one_rejects_an_unmatched_input_signature(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -502,18 +503,10 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
             provenance_path = plan.case.output_dir / "provenance.json"
             provenance = {"input_signature": "unrecoverable-legacy-signature"}
             provenance_path.write_text(json.dumps(provenance), encoding="utf-8")
-            shutil.rmtree(plan.case.visualization_dir)
-
-            fake = _FakeGamma()
-            summary = run_gamma_interferograms(
-                plan, command_runner=fake, progress_sink=lambda _: None
-            )
-
-            self.assertEqual(summary.status, "repaired")
-            self.assertEqual(
-                [call["argv"][0] for call in fake.calls],
-                ["raspwr"] * 4 + ["rasmph", "rasdt_pwr"] * 2,
-            )
+            with self.assertRaisesRegex(FileExistsError, "different inputs"):
+                run_gamma_interferograms(
+                    plan, command_runner=_FakeGamma(), progress_sink=lambda _: None
+                )
 
     def test_incomplete_existing_output_conflicts_instead_of_restarting(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -661,6 +654,49 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
             self.assertEqual(summary.status, "repaired")
             self.assertEqual([call["argv"][0] for call in fake.calls], ["raspwr"])
             self.assertGreater(missing.stat().st_size, 0)
+
+    def test_expected_quicklook_name_cannot_be_a_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = self._plan(root)
+            run_gamma_interferograms(
+                plan, command_runner=_FakeGamma(), progress_sink=lambda _: None
+            )
+            target = plan.case.visualization_dir / "ave_mli.bmp"
+            target.unlink()
+            outside = root / "outside.bmp"
+            outside.write_bytes(b"external")
+            target.symlink_to(outside)
+
+            with self.assertRaisesRegex(FileExistsError, "unexpected entry"):
+                run_gamma_interferograms(
+                    plan, command_runner=_FakeGamma(), progress_sink=lambda _: None
+                )
+
+    def test_science_publication_failure_rolls_back_new_visualization(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = self._plan(root)
+            real_replace = __import__("os").replace
+
+            def fail_science_publication(source, destination):
+                if Path(destination) == plan.case.output_dir:
+                    raise OSError("synthetic science publication failure")
+                return real_replace(source, destination)
+
+            with patch(
+                "geodesy_analysis.io.os.replace",
+                side_effect=fail_science_publication,
+            ):
+                with self.assertRaisesRegex(OSError, "science publication failure"):
+                    run_gamma_interferograms(
+                        plan,
+                        command_runner=_FakeGamma(),
+                        progress_sink=lambda _: None,
+                    )
+
+            self.assertFalse(plan.case.output_dir.exists())
+            self.assertFalse(plan.case.visualization_dir.exists())
 
     def test_input_signature_is_project_location_independent(self) -> None:
         with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:

@@ -18,7 +18,11 @@ from geodesy_analysis.insar.common.gamma_quicklooks import (
     require_nonempty_quicklook,
     wrapped_phase_quicklook_command,
 )
-from geodesy_analysis.io import atomic_output_directory, atomic_output_path
+from geodesy_analysis.io import (
+    atomic_output_directories,
+    atomic_output_directory,
+    atomic_output_path,
+)
 
 from .methods.gamma.adf import adf_commands
 from .methods.gamma.bm3d import bm3d_commands
@@ -200,7 +204,11 @@ def _validate_visualization_inventory(plan: FilteringPlan) -> None:
     if not directory.is_dir() or directory.is_symlink():
         raise FileExistsError(f"visualization output is not a directory: {directory}")
     expected = _quicklook_names(plan)
-    unexpected = sorted(path.name for path in directory.iterdir() if path.name not in expected)
+    unexpected = sorted(
+        path.name
+        for path in directory.iterdir()
+        if path.name not in expected or path.is_symlink() or not path.is_file()
+    )
     if unexpected:
         raise FileExistsError(
             f"visualization directory has unexpected entry: {directory / unexpected[0]}"
@@ -472,7 +480,9 @@ def run_filtering(
     total = len(plan.pairs) + 1
     _event(sink, event="batch_started", status="start", stage="prepare", total=total)
     try:
-        with atomic_output_directory(plan.case.output_dir) as staging:
+        with atomic_output_directories(
+            plan.case.visualization_dir, plan.case.output_dir
+        ) as (visual_staging, staging):
             pairs_dir = staging / "pairs"
             pairs_dir.mkdir()
             published: list[tuple[object, dict[str, Path]]] = []
@@ -532,26 +542,25 @@ def run_filtering(
                     + "\n"
                 ).encode("utf-8")
             ).hexdigest()
-            with atomic_output_directory(plan.case.visualization_dir) as visual_staging:
-                _render_quicklooks(
-                    plan,
-                    published,
-                    destination=visual_staging,
-                    delegate=delegate,
-                    log_dir=log_dir,
-                    atomic_files=False,
-                )
-                _add_quicklook_metadata(plan, manifest, provenance)
-                (staging / "provenance.json").write_text(
-                    json.dumps(provenance, ensure_ascii=False, sort_keys=True, indent=2)
-                    + "\n",
-                    encoding="utf-8",
-                )
-                (staging / "filtering_manifest.json").write_text(
-                    json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2)
-                    + "\n",
-                    encoding="utf-8",
-                )
+            _render_quicklooks(
+                plan,
+                published,
+                destination=visual_staging,
+                delegate=delegate,
+                log_dir=log_dir,
+                atomic_files=False,
+            )
+            _add_quicklook_metadata(plan, manifest, provenance)
+            (staging / "provenance.json").write_text(
+                json.dumps(provenance, ensure_ascii=False, sort_keys=True, indent=2)
+                + "\n",
+                encoding="utf-8",
+            )
+            (staging / "filtering_manifest.json").write_text(
+                json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2)
+                + "\n",
+                encoding="utf-8",
+            )
         _event(sink, event="batch_finished", status="complete", stage="publish", index=total, total=total)
         return FilteringRunSummary("complete", plan.case.method.value, len(plan.pairs), plan.case.output_dir)
     except BaseException:

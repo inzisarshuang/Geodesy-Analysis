@@ -17,7 +17,11 @@ from geodesy_analysis.insar.common.gamma_quicklooks import (
     require_nonempty_quicklook,
     wrapped_phase_quicklook_command,
 )
-from geodesy_analysis.io import atomic_output_directory, atomic_output_path
+from geodesy_analysis.io import (
+    atomic_output_directories,
+    atomic_output_directory,
+    atomic_output_path,
+)
 
 from .models import GammaInterferogramPlan, InterferogramPair
 from .publication import (
@@ -95,14 +99,7 @@ def _read_existing(
             if schema_version == 1
             else signature
         )
-        legacy_signature_unrecoverable = (
-            schema_version == 1
-            and provenance.get("input_signature") != expected_signature
-        )
-        if (
-            provenance.get("input_signature") != expected_signature
-            and not legacy_signature_unrecoverable
-        ):
+        if provenance.get("input_signature") != expected_signature:
             raise FileExistsError(
                 f"interferogram output was produced from different inputs: {output}"
             )
@@ -188,15 +185,7 @@ def _read_existing(
                 acquisition_count=len(raw_mli),
                 pair_count=len(raw_pairs),
                 output_dir=output,
-                warnings=tuple(manifest.get("warnings", ()))
-                + (
-                    (
-                        "legacy input signature could not be reproduced; "
-                        "science was validated from the published manifest",
-                    )
-                    if legacy_signature_unrecoverable
-                    else ()
-                ),
+                warnings=tuple(manifest.get("warnings", ())),
             ),
             manifest=manifest,
             provenance=provenance,
@@ -537,7 +526,11 @@ def _validate_visualization_inventory(plan: GammaInterferogramPlan) -> None:
     if not directory.is_dir() or directory.is_symlink():
         raise FileExistsError(f"visualization output is not a directory: {directory}")
     expected = _quicklook_names(plan)
-    unexpected = sorted(path.name for path in directory.iterdir() if path.name not in expected)
+    unexpected = sorted(
+        path.name
+        for path in directory.iterdir()
+        if path.name not in expected or path.is_symlink() or not path.is_file()
+    )
     if unexpected:
         raise FileExistsError(
             f"visualization directory has unexpected entry: {directory / unexpected[0]}"
@@ -866,7 +859,9 @@ def run_gamma_interferograms(
     total = len(plan.stack.assets) + len(plan.pairs) + 2
     _event(progress_sink, event="batch_started", status="start", total=total, stage="prepare")
     try:
-        with atomic_output_directory(plan.case.output_dir) as staging:
+        with atomic_output_directories(
+            plan.case.visualization_dir, plan.case.output_dir
+        ) as (visual_staging, staging):
             mli_assets, width, lines = _mli_commands(
                 plan,
                 staging=staging,
@@ -986,29 +981,28 @@ def run_gamma_interferograms(
                     + "\n"
                 ).encode("utf-8")
             ).hexdigest()
-            with atomic_output_directory(plan.case.visualization_dir) as visual_staging:
-                _render_quicklooks(
-                    plan,
-                    mli_assets=mli_assets,
-                    average_mli=staging / "MLI/ave_mli",
-                    pair_products=pair_products,
-                    width=width,
-                    destination=visual_staging,
-                    delegate=delegate,
-                    log_dir=log_dir,
-                    atomic_files=False,
-                )
-                _add_quicklook_metadata(plan, manifest, provenance)
-                (staging / "provenance.json").write_text(
-                    json.dumps(provenance, ensure_ascii=False, sort_keys=True, indent=2)
-                    + "\n",
-                    encoding="utf-8",
-                )
-                (staging / "interferogram_manifest.json").write_text(
-                    json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2)
-                    + "\n",
-                    encoding="utf-8",
-                )
+            _render_quicklooks(
+                plan,
+                mli_assets=mli_assets,
+                average_mli=staging / "MLI/ave_mli",
+                pair_products=pair_products,
+                width=width,
+                destination=visual_staging,
+                delegate=delegate,
+                log_dir=log_dir,
+                atomic_files=False,
+            )
+            _add_quicklook_metadata(plan, manifest, provenance)
+            (staging / "provenance.json").write_text(
+                json.dumps(provenance, ensure_ascii=False, sort_keys=True, indent=2)
+                + "\n",
+                encoding="utf-8",
+            )
+            (staging / "interferogram_manifest.json").write_text(
+                json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2)
+                + "\n",
+                encoding="utf-8",
+            )
         _event(
             progress_sink,
             event="batch_finished",
