@@ -19,7 +19,8 @@ Geodesy-Analysis/
 │       ├── interferogram_generation/   # MLI、差分干涉图与相干性
 │       ├── filtering/                  # NL-InSAR、GAMMA BM3D、GAMMA ADF
 │       └── unwrapping/gamma/mcf/       # GAMMA MCF 解缠
-├── config_examples/                    # 完整注释的正式 CFG 示例
+├── config_examples/
+│   └── analysis/                       # Analysis 阶段正式 CFG 示例
 ├── docs/
 │   ├── architecture.md                 # 仓库边界和模块职责
 │   └── workflows/gamma_insar.md        # 从 PRE 到干涉结果的操作顺序
@@ -66,10 +67,10 @@ Geodesy-Analysis/
 
 ## 4. Quick Start / 快速开始
 
-先复制并修改 `config_examples/gamma_baseline.cfg`，使用 `--dry-run` 检查，再正式
-生成基线。随后复制 `config_examples/gamma_interferogram.cfg`，用同样方式检查和
+先复制并修改 `config_examples/analysis/gamma_baseline.cfg`，使用 `--dry-run` 检查，再正式
+生成基线。随后复制 `config_examples/analysis/gamma_interferogram.cfg`，用同样方式检查和
 运行干涉阶段。如需基线图，使用 Geodesy-Visualization 的
-`config_examples/baseline_plot.cfg`。CFG 的 `[project] root` 决定全部相对路径，
+`config_examples/visualization/baseline_plot.cfg`。CFG 的 `[project] root` 决定全部相对路径，
 与终端当前目录无关。每个 `[case:main]` 还必须声明类似
 `case_root = S1/ASCENDING_128` 的正式 case 路径；`main` 只是 CLI 选择标签，不参与
 目录命名。

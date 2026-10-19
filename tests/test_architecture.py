@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -62,7 +63,7 @@ class ArchitectureTests(unittest.TestCase):
     def test_public_contract_has_no_legacy_analysis_layout(self) -> None:
         repository = Path(__file__).resolve().parents[1]
         paths = [repository / "README.md"]
-        paths.extend((repository / "config_examples").glob("*.cfg"))
+        paths.extend((repository / "config_examples").rglob("*.cfg"))
         paths.extend(
             path
             for path in (repository / "docs").rglob("*.md")
@@ -80,6 +81,31 @@ class ArchitectureTests(unittest.TestCase):
             for pattern in forbidden:
                 with self.subTest(path=path, pattern=pattern.pattern):
                     self.assertIsNone(pattern.search(text))
+
+    def test_config_examples_belong_to_the_analysis_stage(self) -> None:
+        """Catch flat or incorrectly packaged public Analysis CFG examples."""
+
+        repository = Path(__file__).resolve().parents[1]
+        example_root = repository / "config_examples"
+        self.assertEqual(tuple(example_root.glob("*.cfg")), ())
+        self.assertEqual(
+            {path.name for path in (example_root / "analysis").glob("*.cfg")},
+            {
+                "gamma_baseline.cfg",
+                "gamma_interferogram.cfg",
+                "gamma_mcf_unwrapping.cfg",
+                "insar_filtering.cfg",
+            },
+        )
+        metadata = tomllib.loads(
+            (repository / "pyproject.toml").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            metadata["tool"]["setuptools"]["data-files"][
+                "share/geodesy-analysis/config_examples/analysis"
+            ],
+            ["config_examples/analysis/*.cfg"],
+        )
 
 
 if __name__ == "__main__":

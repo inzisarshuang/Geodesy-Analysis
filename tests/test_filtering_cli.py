@@ -26,6 +26,8 @@ class FilteringCliTests(unittest.TestCase):
             np.ones((2, 3), dtype=">f4").tofile(data)
             parameter.write_text("range_samples: 3\nazimuth_lines: 2\n", encoding="utf-8")
             mli.append({"date": date, "data_path": f"MLI/{date}.mli", "parameter_path": f"MLI/{date}.mli.par"})
+        average_mli = upstream / "MLI/ave_mli"
+        np.full((2, 3), 1.25, dtype=">f4").tofile(average_mli)
         pair = "20231226-20240131"
         tflt = upstream / "PAIRS" / pair / "pair.tflt"
         tflt.parent.mkdir(parents=True)
@@ -37,6 +39,7 @@ class FilteringCliTests(unittest.TestCase):
                     "status": "complete",
                     "case_id": "S1/ASCENDING_128",
                     "mli_assets": mli,
+                    "average_mli_path": "MLI/ave_mli",
                     "pairs": [{"pair": pair, "products": {"differential_interferogram": f"PAIRS/{pair}/pair.tflt"}}],
                 }
             ),
@@ -89,7 +92,9 @@ class FilteringCliTests(unittest.TestCase):
     def test_public_command_example_and_docs_are_discoverable(self) -> None:
         repository = Path(__file__).resolve().parents[1]
         self.assertIn("geodesy-analysis-filtering", (repository / "pyproject.toml").read_text(encoding="utf-8"))
-        example = (repository / "config_examples/insar_filtering.cfg").read_text(encoding="utf-8")
+        example = (
+            repository / "config_examples/analysis/insar_filtering.cfg"
+        ).read_text(encoding="utf-8")
         for value in ("nl_insar", "gamma_bm3d", "gamma_adf", "output_dir", "自动", "凭据安全"):
             self.assertIn(value, example)
         workflow = (repository / "docs/workflows/gamma_insar.md").read_text(encoding="utf-8")

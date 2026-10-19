@@ -14,7 +14,7 @@ Geodesy-Preprocessing 必须已经发布完整的 `registered_stack.json`。它�
 
 ## 2. 基线选择
 
-从 `config_examples/gamma_baseline.cfg` 复制一份到项目的 `config/analysis/`，填写
+从 `config_examples/analysis/gamma_baseline.cfg` 复制一份到项目的 `config/analysis/`，填写
 注册栈、极化、网络类型、基线阈值和结果目录。
 
 ```bash
@@ -28,7 +28,7 @@ Geodesy-Preprocessing 必须已经发布完整的 `registered_stack.json`。它�
 ```
 
 完成后检查网络表和 `baseline_manifest.json`；Analysis 不再生成 PNG。若需绘制
-或调整基线图，把 Geodesy-Visualization 的 `config_examples/baseline_plot.cfg`
+或调整基线图，把 Geodesy-Visualization 的 `config_examples/visualization/baseline_plot.cfg`
 复制到项目 `config/visualization/`，然后在 `envPlot` 中运行：
 
 ```bash
@@ -41,7 +41,7 @@ Geodesy-Preprocessing 必须已经发布完整的 `registered_stack.json`。它�
 
 ## 3. 干涉图生成
 
-从 `config_examples/gamma_interferogram.cfg` 复制项目 CFG。`baseline_manifest` 必须
+从 `config_examples/analysis/gamma_interferogram.cfg` 复制项目 CFG。`baseline_manifest` 必须
 来自上一步；`radar_height` 必须是与当前裁剪 RSLC 和视数一致的雷达坐标高程。
 
 ```bash
@@ -62,7 +62,7 @@ Geodesy-Visualization 仍负责 PyGMT 地图、论文图和其他二次渲染。
 
 ## 4. 滤波
 
-复制 `config_examples/insar_filtering.cfg` 到项目 `config/analysis/`。每个 case 显式
+复制 `config_examples/analysis/insar_filtering.cfg` 到项目 `config/analysis/`。每个 case 显式
 选择 `nl_insar`、`gamma_bm3d` 或 `gamma_adf`，并读取上一阶段完整的
 `interferogram_manifest.json`。未填写 `output_dir` 时自动落到
 `ANALYSIS/FILTERING/<METHOD>`；填写后使用项目根内的指定目录。
@@ -84,7 +84,7 @@ Geodesy-Visualization 仍负责 PyGMT 地图、论文图和其他二次渲染。
 
 ## 5. GAMMA MCF 解缠
 
-复制 `config_examples/gamma_mcf_unwrapping.cfg`，并显式选择一个已完成的
+复制 `config_examples/analysis/gamma_mcf_unwrapping.cfg`，并显式选择一个已完成的
 `filtering_manifest.json`。解缠目录固定表达方法 `GAMMA_MCF`，上游是 NL-InSAR、
 BM3D 还是 ADF 由 manifest lineage 记录，不叠加到目录层级。
 

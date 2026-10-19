@@ -21,7 +21,7 @@ class ConfigExampleTests(unittest.TestCase):
     repository = Path(__file__).resolve().parents[1]
 
     def _write_example(self, root: Path, name: str) -> Path:
-        source = self.repository / "config_examples" / name
+        source = self.repository / "config_examples/analysis" / name
         text = source.read_text(encoding="utf-8").replace(
             "/path/to/research-project", str(root)
         )
@@ -74,17 +74,17 @@ class ConfigExampleTests(unittest.TestCase):
             self.assertFalse((root / "S1/ASCENDING_128/LOG").exists())
 
     def test_examples_document_stage_owned_flat_quicklooks(self) -> None:
-        baseline = (self.repository / "config_examples/gamma_baseline.cfg").read_text(
+        baseline = (self.repository / "config_examples/analysis/gamma_baseline.cfg").read_text(
             encoding="utf-8"
         )
         interferogram = (
-            self.repository / "config_examples/gamma_interferogram.cfg"
+            self.repository / "config_examples/analysis/gamma_interferogram.cfg"
         ).read_text(encoding="utf-8")
         filtering = (
-            self.repository / "config_examples/insar_filtering.cfg"
+            self.repository / "config_examples/analysis/insar_filtering.cfg"
         ).read_text(encoding="utf-8")
         mcf = (
-            self.repository / "config_examples/gamma_mcf_unwrapping.cfg"
+            self.repository / "config_examples/analysis/gamma_mcf_unwrapping.cfg"
         ).read_text(encoding="utf-8")
         combined = baseline + interferogram + filtering + mcf
 

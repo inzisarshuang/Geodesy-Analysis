@@ -161,7 +161,7 @@ output_dir = S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA
             with self.subTest(command=command):
                 self.assertIn(command, project)
 
-        example = (repository / "config_examples/gamma_interferogram.cfg").read_text(
+        example = (repository / "config_examples/analysis/gamma_interferogram.cfg").read_text(
             encoding="utf-8"
         )
         for required in (

@@ -47,7 +47,9 @@ class GammaMcfCliTests(unittest.TestCase):
     def test_public_entry_example_and_docs_are_discoverable(self) -> None:
         repository = Path(__file__).resolve().parents[1]
         self.assertIn("geodesy-analysis-gamma-mcf", (repository / "pyproject.toml").read_text(encoding="utf-8"))
-        example = (repository / "config_examples/gamma_mcf_unwrapping.cfg").read_text(encoding="utf-8")
+        example = (
+            repository / "config_examples/analysis/gamma_mcf_unwrapping.cfg"
+        ).read_text(encoding="utf-8")
         for value in ("filtering_manifest", "reference_mode", "reference_range", "mcf_mode", "output_dir", "凭据安全"):
             self.assertIn(value, example)
         workflow = (repository / "docs/workflows/gamma_insar.md").read_text(encoding="utf-8")

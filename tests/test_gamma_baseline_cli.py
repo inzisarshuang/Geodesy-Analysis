@@ -103,7 +103,7 @@ output_dir = S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA
         repository = Path(__file__).resolve().parents[1]
         project = (repository / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn("geodesy-analysis-gamma-baseline", project)
-        example = (repository / "config_examples/gamma_baseline.cfg").read_text(
+        example = (repository / "config_examples/analysis/gamma_baseline.cfg").read_text(
             encoding="utf-8"
         )
         for required in (
