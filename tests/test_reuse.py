@@ -26,6 +26,7 @@ class AnalysisReuseTests(unittest.TestCase):
             manifest.write_text(
                 json.dumps(
                     {
+                        "schema_version": 2,
                         "status": "complete",
                         "input_signature": "sig",
                         "required_products": ["pair.filt"],

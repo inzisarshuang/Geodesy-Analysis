@@ -200,7 +200,7 @@ class GammaBaselineRunnerTests(unittest.TestCase):
             self.assertEqual(len(failures), 1)
             self.assertTrue((failures[0] / "base_calc.stdout.log").is_file())
 
-    def test_existing_manifest_pair_count_must_match_network(self) -> None:
+    def test_invalid_complete_manifest_is_not_overwritten(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root)
@@ -209,18 +209,24 @@ class GammaBaselineRunnerTests(unittest.TestCase):
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             manifest["pair_count"] = 99
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-            with self.assertRaisesRegex(FileExistsError, "incomplete or invalid"):
-                run_gamma_baseline(
-                    plan,
-                    command_runner=_FakeBaseCalc(),
-                )
+            fake = _FakeBaseCalc()
+            with self.assertRaisesRegex(RuntimeError, "pair_count"):
+                run_gamma_baseline(plan, command_runner=fake)
+            self.assertEqual(fake.calls, [])
+            self.assertEqual(
+                json.loads(manifest_path.read_text(encoding="utf-8"))["pair_count"],
+                99,
+            )
 
-    def test_matching_output_skips_but_changed_stack_conflicts(self) -> None:
+    def test_existing_output_is_skipped_and_changed_stack_requires_new_output(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root)
             first = _FakeBaseCalc()
-            run_gamma_baseline(plan, command_runner=first)
+            first_summary = run_gamma_baseline(plan, command_runner=first)
+            self.assertEqual(first_summary.status, "complete")
+            self.assertEqual(len(first.calls), 1)
+
             second = _FakeBaseCalc()
             summary = run_gamma_baseline(plan, command_runner=second)
             self.assertEqual(summary.status, "skipped")
@@ -232,13 +238,28 @@ class GammaBaselineRunnerTests(unittest.TestCase):
                 json.dumps(payload, sort_keys=True), encoding="utf-8"
             )
             changed = build_gamma_baseline_plan(plan.case)
-            with self.assertRaisesRegex(FileExistsError, "different inputs"):
-                run_gamma_baseline(
-                    changed,
-                    command_runner=_FakeBaseCalc(),
-                )
+            changed_runner = _FakeBaseCalc()
+            with self.assertRaisesRegex(RuntimeError, "signature changed"):
+                run_gamma_baseline(changed, command_runner=changed_runner)
+            self.assertEqual(changed_runner.calls, [])
 
-    def test_restart_rejects_changed_case_or_registered_stack_identity(self) -> None:
+    def test_complete_output_skips_even_when_runner_would_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = self._plan(root)
+            run_gamma_baseline(plan, command_runner=_FakeBaseCalc())
+            output = plan.case.output_dir
+            original_manifest = (output / "baseline_manifest.json").read_bytes()
+            fake = _FakeBaseCalc(create_outputs=False)
+            summary = run_gamma_baseline(plan, command_runner=fake)
+            self.assertEqual(summary.status, "skipped")
+            self.assertEqual(fake.calls, [])
+            self.assertEqual(
+                (output / "baseline_manifest.json").read_bytes(), original_manifest
+            )
+            self.assertFalse((output / "partial").exists())
+
+    def test_existing_output_with_changed_identity_is_rejected(self) -> None:
         mutations = (
             ("case_id", "S1/DESCENDING_135"),
             (
@@ -256,10 +277,10 @@ class GammaBaselineRunnerTests(unittest.TestCase):
                 manifest[key] = value
                 manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
-                with self.assertRaisesRegex(FileExistsError, "incomplete or invalid"):
+                with self.assertRaisesRegex(RuntimeError, "identity is inconsistent"):
                     run_gamma_baseline(plan, command_runner=_FakeBaseCalc())
 
-    def test_legacy_schema_one_output_remains_restart_compatible(self) -> None:
+    def test_legacy_schema_one_output_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root)
@@ -286,14 +307,11 @@ class GammaBaselineRunnerTests(unittest.TestCase):
             )
             fake = _FakeBaseCalc()
             progress: list[str] = []
-            summary = run_gamma_baseline(
-                plan, command_runner=fake, progress_sink=progress.append
-            )
-            self.assertEqual(summary.status, "skipped")
+            with self.assertRaisesRegex(RuntimeError, "schema is not version 2"):
+                run_gamma_baseline(
+                    plan, command_runner=fake, progress_sink=progress.append
+                )
             self.assertEqual(fake.calls, [])
-            event = json.loads(progress[-1].split(" ", 1)[1])
-            self.assertEqual(event["total"], 2)
-            self.assertEqual(event["index"], 2)
 
 
 if __name__ == "__main__":

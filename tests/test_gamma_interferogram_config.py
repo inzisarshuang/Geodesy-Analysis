@@ -19,7 +19,8 @@ class GammaInterferogramConfigTests(unittest.TestCase):
         for relative in (
             "S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json",
             "S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA/baseline_manifest.json",
-            "S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/reference.hgt_sim",
+            "TOPOGRAPHY/cop30/GAMMA/cop30.dem",
+            "TOPOGRAPHY/cop30/GAMMA/cop30.dem.par",
         ):
             path = root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -29,6 +30,21 @@ class GammaInterferogramConfigTests(unittest.TestCase):
         path = root / "config/analysis/gamma_interferogram.cfg"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(body, encoding="utf-8")
+        geocoding = root / "config/analysis/geocoding.cfg"
+        geocoding.write_text(
+            f"""[project]
+root = {root}
+[case:ascending]
+dem = TOPOGRAPHY/cop30/GAMMA/cop30.dem
+dem_par = TOPOGRAPHY/cop30/GAMMA/cop30.dem.par
+output_dir = S1/ASCENDING_128/ANALYSIS/GEO/GAMMA
+[case:descending]
+dem = TOPOGRAPHY/cop30/GAMMA/cop30.dem
+dem_par = TOPOGRAPHY/cop30/GAMMA/cop30.dem.par
+output_dir = S1/DESCENDING_135/ANALYSIS/GEO/GAMMA
+""",
+            encoding="utf-8",
+        )
         return path
 
     def _body(self, root: Path) -> str:
@@ -40,13 +56,56 @@ root = {root}
 case_root = S1/ASCENDING_128
 registered_stack = S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json
 baseline_manifest = S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA/baseline_manifest.json
+geocoding_config = config/analysis/geocoding.cfg
 polarization = vv
 range_looks = 10
 azimuth_looks = 2
-radar_height = S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/reference.hgt_sim
 spectral_filter = auto
 output_dir = S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA
 """
+
+    def test_method_root_defaults_science_geocoding_and_flat_figure_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for relative in (
+                "S1/ASCENDING_128/GAMMA/RSLC/SUBSET/registered_stack.json",
+                "S1/ASCENDING_128/GAMMA/BASELINE/baseline_manifest.json",
+                "TOPOGRAPHY/cop30/GAMMA/cop30.dem",
+                "TOPOGRAPHY/cop30/GAMMA/cop30.dem.par",
+            ):
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("input\n", encoding="utf-8")
+            config = self._write(
+                root,
+                f"""[project]
+root = {root}
+[case:ascending]
+project = S1/ASCENDING_128
+processing_root = S1/ASCENDING_128/GAMMA
+registered_stack = S1/ASCENDING_128/GAMMA/RSLC/SUBSET/registered_stack.json
+baseline_manifest = S1/ASCENDING_128/GAMMA/BASELINE/baseline_manifest.json
+geocoding_config = config/analysis/geocoding.cfg
+polarization = VV
+range_looks = 10
+azimuth_looks = 2
+""",
+            )
+            (root / "config/analysis/geocoding.cfg").write_text(
+                f"""[project]
+root = {root}
+[case:ascending]
+dem = TOPOGRAPHY/cop30/GAMMA/cop30.dem
+dem_par = TOPOGRAPHY/cop30/GAMMA/cop30.dem.par
+""",
+                encoding="utf-8",
+            )
+
+            (case,) = load_gamma_interferogram_config(config, case_name="ascending")
+
+            self.assertEqual(case.output_dir, root / "S1/ASCENDING_128/GAMMA/INTF")
+            self.assertEqual(case.geocoding.output_dir, root / "S1/ASCENDING_128/GAMMA/GEOCODING")
+            self.assertEqual(case.visualization_dir, root / "S1/ASCENDING_128/GAMMA/FIGURES/INTF")
 
     def test_loads_required_values_and_legacy_advanced_defaults(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -83,34 +142,99 @@ output_dir = S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA
                 (root / "S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA").resolve(),
             )
             self.assertEqual(
+                case.geocoding.output_dir,
+                (root / "S1/ASCENDING_128/ANALYSIS/GEO/GAMMA").resolve(),
+            )
+            self.assertEqual(
                 case.visualization_dir,
-                (root / "S1/ASCENDING_128/VISUALIZATION/INTERFEROGRAM_GENERATION/GAMMA").resolve(),
+                (
+                    root
+                    / "S1/ASCENDING_128/VISUALIZATION/INTERFEROGRAM_GENERATION/GAMMA"
+                ).resolve(),
             )
 
-    def test_explicit_visualization_directory_is_case_confined_and_disjoint(self) -> None:
+    def test_science_geocoding_and_visualization_directories_are_customizable(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             self._inputs(root)
-            body = self._body(root) + "visualization_dir = S1/ASCENDING_128/VISUALIZATION/manual_ifg\n"
-            (case,) = load_gamma_interferogram_config(self._write(root, body))
+            config_path = self._write(
+                root,
+                self._body(root)
+                + "visualization_dir = S1/ASCENDING_128/VISUALIZATION/manual_ifg\n",
+            )
+            geocoding_config = root / "config/analysis/geocoding.cfg"
+            geocoding_config.write_text(
+                f"""[project]
+root = {root}
+[case:ascending]
+dem = TOPOGRAPHY/cop30/GAMMA/cop30.dem
+dem_par = TOPOGRAPHY/cop30/GAMMA/cop30.dem.par
+output_dir = results/custom_geo
+""",
+                encoding="utf-8",
+            )
+            (case,) = load_gamma_interferogram_config(config_path)
+            self.assertEqual(
+                case.geocoding.output_dir,
+                (root / "results/custom_geo").resolve(),
+            )
             self.assertEqual(
                 case.visualization_dir,
                 (root / "S1/ASCENDING_128/VISUALIZATION/manual_ifg").resolve(),
             )
 
-            for value in (
-                "S1/DESCENDING_135/VISUALIZATION/GAMMA",
-                "S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA",
-                "S1/ASCENDING_128/PRE/GAMMA",
-            ):
-                with self.subTest(value=value), self.assertRaises(ValueError):
-                    load_gamma_interferogram_config(
-                        self._write(
-                            root,
-                            self._body(root)
-                            + f"visualization_dir = {value}\n",
-                        )
-                    )
+            external = Path(directory).parent / "custom-science"
+            body = self._body(root).replace(
+                "output_dir = S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA",
+                f"output_dir = {external}",
+            )
+            config_path.write_text(body, encoding="utf-8")
+            (case,) = load_gamma_interferogram_config(config_path)
+            self.assertEqual(case.output_dir, external.resolve())
+
+            geo_config = root / "config/analysis/geocoding.cfg"
+            geo_config.write_text(
+                f"""[project]
+root = {root}
+[case:ascending]
+dem = TOPOGRAPHY/cop30/GAMMA/cop30.dem
+dem_par = TOPOGRAPHY/cop30/GAMMA/cop30.dem.par
+output_dir = S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA
+""",
+                encoding="utf-8",
+            )
+            config_path.write_text(self._body(root), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "output directories overlap"):
+                load_gamma_interferogram_config(config_path)
+
+    def test_all_outputs_accept_distinct_absolute_paths_outside_project(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as external:
+            root = Path(directory)
+            output_root = Path(external)
+            self._inputs(root)
+            geo_config = root / "config/analysis/geocoding.cfg"
+            geo_config.parent.mkdir(parents=True, exist_ok=True)
+            geo_config.write_text(
+                f"""[project]
+root = {root}
+[case:ascending]
+dem = TOPOGRAPHY/cop30/GAMMA/cop30.dem
+dem_par = TOPOGRAPHY/cop30/GAMMA/cop30.dem.par
+output_dir = {output_root / "geometry"}
+""",
+                encoding="utf-8",
+            )
+            body = (
+                self._body(root).replace(
+                    "output_dir = S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA",
+                    f"output_dir = {output_root / 'science'}",
+                )
+            )
+            config_path = root / "config/analysis/gamma_interferogram.cfg"
+            config_path.write_text(body, encoding="utf-8")
+            (case,) = load_gamma_interferogram_config(config_path)
+            self.assertEqual(case.geocoding.output_dir, output_root / "geometry")
+            self.assertEqual(case.output_dir, output_root / "science")
 
     def test_case_values_override_defaults_and_modes_are_normalized(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -140,8 +264,8 @@ coherence_estimator = 1
 case_root = S1/ASCENDING_128
 registered_stack = S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json
 baseline_manifest = S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA/baseline_manifest.json
+geocoding_config = config/analysis/geocoding.cfg
 polarization = vv
-radar_height = S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/reference.hgt_sim
 spectral_filter = OFF
 output_dir = S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA
 """,
@@ -251,10 +375,6 @@ coherence_estimator = 2
                     "baseline_manifest",
                     "S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA/baseline_manifest.json",
                 ),
-                (
-                    "radar_height",
-                    "S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/reference.hgt_sim",
-                ),
             ):
                 with self.subTest(key=key):
                     config = self._write(
@@ -263,23 +383,13 @@ coherence_estimator = 2
                     with self.assertRaisesRegex(ValueError, "case input.*case root"):
                         load_gamma_interferogram_config(config)
 
-    def test_rejects_missing_cross_case_and_noncanonical_paths(self) -> None:
+    def test_rejects_missing_and_cross_case_inputs_but_accepts_custom_output(self) -> None:
         replacements = (
             ("case_root = S1/ASCENDING_128\n", "", "missing keys.*case_root"),
             (
                 "baseline_manifest = S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA/baseline_manifest.json",
                 "baseline_manifest = S1/DESCENDING_135/ANALYSIS/BASELINE_SELECTION/GAMMA/baseline_manifest.json",
                 "case input.*case root",
-            ),
-            (
-                "radar_height = S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/reference.hgt_sim",
-                "radar_height = S1/DESCENDING_135/PRE/GAMMA/GEOMETRY/reference.hgt_sim",
-                "case input.*case root",
-            ),
-            (
-                "output_dir = S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA",
-                "output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/OTHER",
-                "canonical interferogram output",
             ),
         )
         for old, new, message in replacements:
@@ -289,17 +399,30 @@ coherence_estimator = 2
                 config = self._write(root, self._body(root).replace(old, new))
                 with self.assertRaisesRegex(ValueError, message):
                     load_gamma_interferogram_config(config)
-
-    def test_rejects_input_symlink_escape(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             self._inputs(root)
-            height = root / "S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/reference.hgt_sim"
+            (case,) = load_gamma_interferogram_config(
+                self._write(
+                    root,
+                    self._body(root).replace(
+                        "S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA",
+                        "custom/results/interferogram",
+                    ),
+                )
+            )
+            self.assertEqual(case.output_dir, (root / "custom/results/interferogram").resolve())
+
+    def test_rejects_input_symlink_escape(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside_dir:
+            root = Path(directory)
+            self._inputs(root)
+            height = root / "TOPOGRAPHY/cop30/GAMMA/cop30.dem"
             height.unlink()
-            outside = root / "outside.hgt"
-            outside.write_bytes(b"height")
+            outside = Path(outside_dir) / "cop30.dem"
+            outside.write_bytes(b"dem")
             height.symlink_to(outside)
-            with self.assertRaisesRegex(ValueError, "case input.*case root"):
+            with self.assertRaisesRegex(ValueError, "project input.*project root"):
                 load_gamma_interferogram_config(self._write(root, self._body(root)))
 
     def test_select_requires_case_for_multiple_cases(self) -> None:
@@ -314,6 +437,27 @@ coherence_estimator = 2
             self.assertEqual(select_gamma_interferogram_case(cases, "descending").name, "descending")
             with self.assertRaisesRegex(ValueError, "unknown case"):
                 select_gamma_interferogram_case(cases, "missing")
+
+    def test_loading_requested_case_ignores_invalid_other_case(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._inputs(root)
+            config = self._write(
+                root,
+                self._body(root)
+                + """
+[case:unused]
+case_root = S1/DESCENDING_135
+registered_stack = S1/DESCENDING_135/missing.json
+""",
+            )
+            (case,) = load_gamma_interferogram_config(
+                config, case_name="ascending"
+            )
+            self.assertEqual(case.name, "ascending")
+
+            with self.assertRaisesRegex(ValueError, "missing keys"):
+                load_gamma_interferogram_config(config, case_name="unused")
 
 
 if __name__ == "__main__":

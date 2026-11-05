@@ -82,11 +82,24 @@ class GammaInterferogramCliTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        height = root / "S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/20231226.hgt_sim"
-        height.parent.mkdir(parents=True)
-        height.write_bytes(b"height")
+        dem = root / "TOPOGRAPHY/cop30/GAMMA/cop30.dem"
+        dem.parent.mkdir(parents=True)
+        dem.write_bytes(b"dem")
+        (dem.parent / "cop30.dem.par").write_text("dem parameter\n", encoding="utf-8")
+        geocoding_config = root / "config/analysis/gamma_geocoding.cfg"
+        geocoding_config.parent.mkdir(parents=True)
+        geocoding_config.write_text(
+            f"""[project]
+root = {root}
+[case:ascending]
+dem = TOPOGRAPHY/cop30/GAMMA/cop30.dem
+dem_par = TOPOGRAPHY/cop30/GAMMA/cop30.dem.par
+output_dir = S1/ASCENDING_128/ANALYSIS/GEO/GAMMA
+""",
+            encoding="utf-8",
+        )
         config = root / "config/analysis/gamma_interferogram.cfg"
-        config.parent.mkdir(parents=True)
+        config.parent.mkdir(parents=True, exist_ok=True)
         config.write_text(
             f"""
 [project]
@@ -95,12 +108,13 @@ root = {root}
 case_root = S1/ASCENDING_128
 registered_stack = S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json
 baseline_manifest = S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA/baseline_manifest.json
+geocoding_config = config/analysis/gamma_geocoding.cfg
 polarization = VV
 range_looks = 10
 azimuth_looks = 2
-radar_height = S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/20231226.hgt_sim
 spectral_filter = auto
 output_dir = S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA
+visualization_dir = S1/ASCENDING_128/VISUALIZATION/INTERFEROGRAM_GENERATION/GAMMA
 """,
             encoding="utf-8",
         )
@@ -126,10 +140,16 @@ output_dir = S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA
             self.assertEqual(payload["looks"], {"azimuth": 2, "range": 10})
             self.assertEqual(payload["spectral_filter"], "auto")
             self.assertEqual(payload["resolved_filter_flags"], {"azimuth": 0, "range": 0})
+            self.assertEqual(payload["dem"], str(root / "TOPOGRAPHY/cop30/GAMMA/cop30.dem"))
             self.assertEqual(
-                payload["radar_height"],
-                str(root / "S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/20231226.hgt_sim"),
+                payload["geocoding_output_dir"],
+                str(root / "S1/ASCENDING_128/ANALYSIS/GEO/GAMMA"),
             )
+            self.assertEqual(
+                payload["quicklook_output_dir"],
+                str(root / "S1/ASCENDING_128/VISUALIZATION/INTERFEROGRAM_GENERATION/GAMMA"),
+            )
+            self.assertEqual(payload["visualization_dir"], payload["quicklook_output_dir"])
             self.assertFalse(
                 (root / "S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA").exists()
             )
@@ -150,6 +170,30 @@ output_dir = S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA
             ), contextlib.redirect_stderr(error):
                 code = main(["--config", str(config), "--case", "ascending"])
             self.assertEqual(code, 1)
+
+    def test_specified_case_does_not_validate_unselected_cases(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = self._config(root)
+            with config.open("a", encoding="utf-8") as stream:
+                stream.write(
+                    "\n[case:unused]\n"
+                    "case_root = S1/DESCENDING_135\n"
+                    "registered_stack = S1/DESCENDING_135/missing.json\n"
+                )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                code = main(
+                    [
+                        "--config",
+                        str(config),
+                        "--case",
+                        "ascending",
+                        "--dry-run",
+                    ]
+                )
+            self.assertEqual(code, 0)
+            self.assertEqual(json.loads(output.getvalue())["case"], "ascending")
 
     def test_packaging_cfg_and_workflow_document_all_public_operations(self) -> None:
         repository = Path(__file__).resolve().parents[1]
@@ -176,7 +220,7 @@ output_dir = S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA
             "完成判断",
             "重新运行",
             "凭据安全",
-            "radar_height",
+            "geocoding_config",
             "create_offset",
             "cc_wave",
         ):

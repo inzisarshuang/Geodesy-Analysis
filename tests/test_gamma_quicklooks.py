@@ -34,7 +34,7 @@ class GammaQuicklookTests(unittest.TestCase):
             ),
         )
 
-    def test_wrapped_commands_preserve_interferogram_filter_and_nl_modes(self) -> None:
+    def test_wrapped_commands_read_complex_interferograms_as_phase(self) -> None:
         self.assertEqual(
             wrapped_phase_quicklook_command(
                 Path("pair.tflt"), 137, Path("pair.tflt.bmp")
@@ -67,20 +67,18 @@ class GammaQuicklookTests(unittest.TestCase):
                 Path("pair.tflt.filt"),
                 137,
                 Path("pair.tflt.filt.bmp"),
-                nonlocal_mode=True,
+                line_start="0",
             ),
             (
-                "rasdt_pwr",
+                "rasmph",
                 "pair.tflt.filt",
-                "-",
                 "137",
-                "-",
-                "-",
-                "-",
-                "-",
-                "-",
-                "-",
-                "2",
+                "1",
+                "0",
+                "1",
+                "1",
+                "1",
+                ".35",
                 "rmg.cm",
                 "pair.tflt.filt.bmp",
             ),
@@ -149,6 +147,29 @@ class GammaQuicklookTests(unittest.TestCase):
                 "2",
                 "rmg.cm",
                 "pair.tflt.filt.unw.bmp",
+            ),
+        )
+        self.assertEqual(
+            unwrapped_phase_quicklook_command(
+                Path("pair.quad.unw"),
+                137,
+                Path("pair.quad.unw.bmp"),
+                background=Path("master.mli"),
+            ),
+            (
+                "rasdt_pwr",
+                "pair.quad.unw",
+                "master.mli",
+                "137",
+                "1",
+                "0",
+                "1",
+                "1",
+                "-",
+                "-",
+                "2",
+                "rmg.cm",
+                "pair.quad.unw.bmp",
             ),
         )
 

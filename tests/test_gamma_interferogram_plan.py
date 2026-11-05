@@ -10,6 +10,7 @@ from pathlib import Path
 
 from geodesy_analysis.common.case_paths import bind_analysis_case
 from geodesy_analysis.insar.interferogram_generation.gamma.models import (
+    GammaGeocodingConfig,
     GammaInterferogramCase,
 )
 from geodesy_analysis.insar.interferogram_generation.gamma.plan import (
@@ -114,17 +115,32 @@ class GammaInterferogramPlanTests(unittest.TestCase):
         *,
         spectral_filter: str = "auto",
     ) -> GammaInterferogramCase:
-        radar_height = root / "S1/ASCENDING_128/PRE/GAMMA/GEOMETRY/reference.hgt_sim"
-        radar_height.parent.mkdir(parents=True, exist_ok=True)
-        radar_height.write_bytes(b"height")
+        dem = root / "TOPOGRAPHY/cop30/GAMMA/cop30.dem"
+        dem.parent.mkdir(parents=True, exist_ok=True)
+        dem.write_bytes(b"dem")
+        dem_par = dem.with_name(f"{dem.name}.par")
+        dem_par.write_text("dem parameter\n", encoding="utf-8")
+        geocoding_config = root / "config/analysis/geocoding.cfg"
+        geocoding_config.parent.mkdir(parents=True, exist_ok=True)
+        geocoding_config.write_text("geocoding config\n", encoding="utf-8")
         return GammaInterferogramCase(
             paths=bind_analysis_case(root, "ascending", "S1/ASCENDING_128"),
             registered_stack=stack,
             baseline_manifest=baseline,
+            geocoding=GammaGeocodingConfig(
+                config_path=geocoding_config,
+                dem=dem,
+                dem_par=dem_par,
+                output_dir=root / "S1/ASCENDING_128/ANALYSIS/GEO/GAMMA",
+                correlation_threshold=0.2,
+                polynomial_parameters=1,
+                range_window=128,
+                azimuth_window=128,
+                area_factor=1.0,
+            ),
             polarization="VV",
             range_looks=10,
             azimuth_looks=2,
-            radar_height=radar_height,
             spectral_filter=spectral_filter,
             create_offset_range_start=0,
             create_offset_azimuth_start=0,
@@ -137,6 +153,7 @@ class GammaInterferogramPlanTests(unittest.TestCase):
             coherence_azimuth_window=5,
             coherence_estimator=2,
             output_dir=root / "S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA",
+            visualization_dir=root / "S1/ASCENDING_128/VISUALIZATION/INTERFEROGRAM_GENERATION/GAMMA",
         )
 
     def test_preserves_network_order_and_resolves_sentinel1_auto_off(self) -> None:
@@ -283,17 +300,17 @@ class GammaInterferogramPlanTests(unittest.TestCase):
             plan = build_gamma_interferogram_plan(self._case(root, stack, baseline))
             self.assertEqual(plan.baseline.schema_version, 1)
 
-    def test_rejects_missing_or_empty_radar_height(self) -> None:
+    def test_rejects_missing_or_empty_geocoding_dem(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             stack, digest = self._stack(root)
             baseline = self._baseline(root, digest)
             case = self._case(root, stack, baseline)
-            case.radar_height.write_bytes(b"")
-            with self.assertRaisesRegex(ValueError, "radar height"):
+            case.geocoding.dem.write_bytes(b"")
+            with self.assertRaisesRegex(ValueError, "geocoding DEM"):
                 build_gamma_interferogram_plan(case)
-            case.radar_height.unlink()
-            with self.assertRaisesRegex(FileNotFoundError, "radar height"):
+            case.geocoding.dem.unlink()
+            with self.assertRaisesRegex(FileNotFoundError, "geocoding DEM"):
                 build_gamma_interferogram_plan(case)
 
 

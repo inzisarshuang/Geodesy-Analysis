@@ -11,16 +11,31 @@ from geodesy_analysis.insar.common.registered_stack import RegisteredStack
 
 
 @dataclass(frozen=True)
+class GammaGeocodingConfig:
+    """DEM, output location, and numerical settings for reference geocoding."""
+
+    config_path: Path
+    dem: Path
+    dem_par: Path
+    output_dir: Path
+    correlation_threshold: float
+    polynomial_parameters: int
+    range_window: int
+    azimuth_window: int
+    area_factor: float
+
+
+@dataclass(frozen=True)
 class GammaInterferogramCase:
     """One resolved interferogram case and all user-controlled parameters."""
 
     paths: AnalysisCasePaths
     registered_stack: Path
     baseline_manifest: Path
+    geocoding: GammaGeocodingConfig
     polarization: str
     range_looks: int
     azimuth_looks: int
-    radar_height: Path
     spectral_filter: Literal["auto", "on", "off"]
     create_offset_range_start: int
     create_offset_azimuth_start: int
@@ -94,6 +109,7 @@ class GammaInterferogramPlan:
 
 __all__ = [
     "BaselineManifest",
+    "GammaGeocodingConfig",
     "GammaInterferogramCase",
     "GammaInterferogramPlan",
     "InterferogramPair",

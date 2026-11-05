@@ -79,6 +79,13 @@ def classify_analysis_output(
         return ReuseDecision(
             ReuseState.INCOMPLETE, output, "manifest does not declare status=complete", payload
         )
+    if payload.get("schema_version") != 2:
+        return ReuseDecision(
+            ReuseState.MISMATCH,
+            output,
+            "completion manifest schema is not version 2",
+            payload,
+        )
     if payload.get("input_signature") != expected_signature:
         return ReuseDecision(
             ReuseState.MISMATCH, output, "input/config signature changed", payload
@@ -119,7 +126,7 @@ def classify_analysis_output(
         figure = Path(value).expanduser()
         if not figure.is_absolute():
             figure = output / figure
-        if not figure.is_file() or figure.stat().st_size < 1:
+        if figure.is_symlink() or not figure.is_file() or figure.stat().st_size < 1:
             return ReuseDecision(
                 ReuseState.FIGURES_MISSING,
                 output,

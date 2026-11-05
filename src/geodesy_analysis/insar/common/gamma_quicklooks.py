@@ -50,13 +50,10 @@ def wrapped_phase_quicklook_command(
     width: int,
     output: Path,
     *,
-    nonlocal_mode: bool = False,
     line_start: str = "-",
 ) -> tuple[str, ...]:
-    """Build the legacy wrapped-phase command for GAMMA or NL-InSAR."""
+    """Build a GAMMA complex wrapped-phase display command."""
 
-    if nonlocal_mode:
-        return _background_free_command(data, width, output, "rmg.cm")
     if line_start not in {"-", "0"}:
         raise ValueError("line_start must be '-' or '0'")
     return (
@@ -103,10 +100,30 @@ def coherence_quicklook_command(
 
 
 def unwrapped_phase_quicklook_command(
-    data: Path, width: int, output: Path
+    data: Path,
+    width: int,
+    output: Path,
+    *,
+    background: Path | None = None,
 ) -> tuple[str, ...]:
-    """Build the legacy background-free unwrapped-phase command."""
+    """Build an unwrapped-phase display command with an optional MLI background."""
 
+    if background is not None:
+        return (
+            "rasdt_pwr",
+            str(data),
+            str(background),
+            str(width),
+            "1",
+            "0",
+            "1",
+            "1",
+            "-",
+            "-",
+            "2",
+            "rmg.cm",
+            str(output),
+        )
     return _background_free_command(data, width, output, "rmg.cm")
 
 

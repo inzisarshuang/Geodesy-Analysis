@@ -179,10 +179,57 @@ def atomic_replace_output_directories(
 def atomic_output_directories(
     *destinations: Path,
 ) -> Iterator[tuple[Path, ...]]:
-    """Stage several directories and replace existing destinations atomically."""
+    """Stage several directories and publish only when every target is absent."""
 
-    with atomic_replace_output_directories(*destinations) as staging:
-        yield staging
+    outputs = tuple(Path(destination) for destination in destinations)
+    if len(outputs) < 2:
+        raise ValueError("at least two output directories are required")
+    if len({output.resolve() for output in outputs}) != len(outputs):
+        raise ValueError("output directories must be distinct")
+    existing = [output for output in outputs if output.exists() or output.is_symlink()]
+    if existing:
+        raise FileExistsError(
+            "output directories already exist: "
+            + ", ".join(str(output) for output in existing)
+        )
+
+    staging: list[Path] = []
+    published: list[tuple[Path, int]] = []
+    try:
+        for output in outputs:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            staging.append(
+                Path(
+                    tempfile.mkdtemp(
+                        prefix=f".{output.name}.",
+                        suffix=".stage",
+                        dir=output.parent,
+                    )
+                )
+            )
+        yield tuple(staging)
+        appeared = [
+            output for output in outputs if output.exists() or output.is_symlink()
+        ]
+        if appeared:
+            raise FileExistsError(
+                "output directories appeared during run: "
+                + ", ".join(str(output) for output in appeared)
+            )
+        for temporary, output in zip(staging, outputs):
+            inode = temporary.stat(follow_symlinks=False).st_ino
+            os.replace(temporary, output)
+            published.append((output, inode))
+    except BaseException:
+        for output, inode in reversed(published):
+            try:
+                if output.stat(follow_symlinks=False).st_ino == inode:
+                    shutil.rmtree(output)
+            except FileNotFoundError:
+                pass
+        for temporary in staging:
+            shutil.rmtree(temporary, ignore_errors=True)
+        raise
 
 
 __all__ = [
