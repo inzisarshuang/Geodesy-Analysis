@@ -8,7 +8,24 @@ time-series analysis.
 干涉图和相干性的正式 GAMMA 工作流，并支持 NL-InSAR、GAMMA BM3D 与 GAMMA ADF
 三种清单驱动滤波方法、GAMMA MCF 解缠和 quad 相位去趋势；大气改正和时序模块按后续阶段继续迁移。
 
-## 1. Project Structure / 项目结构
+## 1. Repository Scope / 仓库定位
+
+This repository owns scientific processing after sensor preprocessing. Its current
+implemented boundary runs from a validated registered stack through GAMMA quad phase
+detrending. Atmosphere correction, MintPy, and DS-InSAR are not included in the
+current completion claim.
+
+本仓库负责传感器预处理之后的科学处理。当前已实现边界从通过校验的注册栈延伸到
+GAMMA quad 相位去趋势；大气改正、MintPy 和 DS-InSAR 不在当前完成声明内。
+
+Legacy scripts remain a fallback reference until real-data comparison is complete,
+but new code does not import the legacy repository. Refactoring changes contracts for
+new runs and does not move, copy, or delete existing project data.
+
+旧脚本在真实数据对照完成前保留为回退来源，但新代码不导入旧仓库。代码重构只改变
+新运行的契约，不移动、复制或删除现有研究项目数据。
+
+## 2. Project Structure / 项目结构
 
 ```text
 Geodesy-Analysis/
@@ -29,7 +46,7 @@ Geodesy-Analysis/
 └── pyproject.toml                      # 安装信息与命令入口
 ```
 
-## 2. Workflow Overview / 流程总览
+## 3. Workflow Overview / 流程总览
 
 正式输入是 Geodesy-Preprocessing 发布的 `registered_stack.json`。Analysis 不重新
 下载数据、生成 SLC 或配准影像。
@@ -47,7 +64,7 @@ Geodesy-Analysis/
 
 详细操作见 [GAMMA InSAR workflow](docs/workflows/gamma_insar.md)。
 
-## 3. Dependencies and Installation / 环境与安装
+## 4. Dependencies And Installation / 环境与安装
 
 - Python 3.10 或更高版本；当前统一测试环境为 `envInSAR`（Python 3.11）。
 - GAMMA ISP、DIFF 等命令必须在 `PATH` 中。
@@ -68,7 +85,7 @@ Geodesy-Analysis/
 /home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-quad-detrend --help
 ```
 
-## 4. Quick Start / 快速开始
+## 5. Quick Start / 快速开始
 
 先复制并修改 `config_examples/analysis/gamma_baseline.cfg`，使用 `--dry-run` 检查，再正式
 生成基线。随后复制 `config_examples/analysis/gamma_interferogram.cfg`，用同样方式检查和
@@ -79,18 +96,18 @@ Geodesy-Analysis/
 目录命名。
 
 ```bash
-geodesy-analysis-gamma-baseline --config /absolute/PROJECT/config/analysis/gamma_baseline.cfg --case main --dry-run
-geodesy-analysis-gamma-baseline --config /absolute/PROJECT/config/analysis/gamma_baseline.cfg --case main
-geodesy-analysis-gamma-interferogram --config /absolute/PROJECT/config/analysis/gamma_interferogram.cfg --case main --dry-run
-geodesy-analysis-gamma-interferogram --config /absolute/PROJECT/config/analysis/gamma_interferogram.cfg --case main
-geodesy-analysis-filtering --config /absolute/PROJECT/config/analysis/insar_filtering.cfg --dry-run
-geodesy-analysis-filtering --config /absolute/PROJECT/config/analysis/insar_filtering.cfg --case nl_insar
-geodesy-analysis-gamma-mcf --config /absolute/PROJECT/config/analysis/gamma_mcf_unwrapping.cfg --case main
-geodesy-analysis-gamma-quad-detrend --config /absolute/PROJECT/config/analysis/gamma_quad_detrending.cfg --case main --dry-run
-geodesy-analysis-gamma-quad-detrend --config /absolute/PROJECT/config/analysis/gamma_quad_detrending.cfg --case main
+geodesy-analysis-gamma-baseline --config /absolute/PROJECT/config/2analysis/gamma_baseline.cfg --case main --dry-run
+geodesy-analysis-gamma-baseline --config /absolute/PROJECT/config/2analysis/gamma_baseline.cfg --case main
+geodesy-analysis-gamma-interferogram --config /absolute/PROJECT/config/2analysis/gamma_interferogram.cfg --case main --dry-run
+geodesy-analysis-gamma-interferogram --config /absolute/PROJECT/config/2analysis/gamma_interferogram.cfg --case main
+geodesy-analysis-filtering --config /absolute/PROJECT/config/2analysis/insar_filtering.cfg --dry-run
+geodesy-analysis-filtering --config /absolute/PROJECT/config/2analysis/insar_filtering.cfg --case nl_insar
+geodesy-analysis-gamma-mcf --config /absolute/PROJECT/config/2analysis/gamma_mcf_unwrapping.cfg --case main
+geodesy-analysis-gamma-quad-detrend --config /absolute/PROJECT/config/2analysis/gamma_quad_detrending.cfg --case main --dry-run
+geodesy-analysis-gamma-quad-detrend --config /absolute/PROJECT/config/2analysis/gamma_quad_detrending.cfg --case main
 ```
 
-## 5. Outputs and Logs / 结果与日志
+## 6. Data And Output Behavior / 数据与输出行为
 
 - PRE 输入：`<processing_root>/RSLC/registered_stack.json` 或 `RSLC/SUBSET/registered_stack.json`
 - 基线结果：`<processing_root>/BASELINE/`
@@ -111,9 +128,35 @@ geodesy-analysis-gamma-quad-detrend --config /absolute/PROJECT/config/analysis/g
 原生质量检查图，按阶段/方法平铺。Geodesy-Visualization 继续负责基线网络图、
 PyGMT 地图、论文图和其他二次渲染。
 
-## 6. Current Scope / 当前范围
+## 7. Verification And Development / 验证与开发
 
-本阶段完成到 GAMMA quad 相位去趋势。大气改正、MintPy、DS-InSAR 不在
-当前完成声明内。旧脚本在真实数据对照完成前保留为回退来源，但新代码不导入旧仓库。
-本次代码重构只改变新运行的契约，不移动、复制或删除现有研究项目数据；真实项目迁移
-由后续独立的可预览迁移任务完成。
+```bash
+conda activate envInSAR
+python -m compileall -q src/geodesy_analysis
+python -m pytest -q
+git diff --check
+```
+
+Development changes must preserve manifest validation, safe rerun behavior, explicit
+method directories, and the separation between scientific quicklooks and publication
+visualization.
+
+开发改动必须保留清单校验、安全重跑、显式方法目录，以及科学质检图与最终制图之间
+的职责边界。
+
+## 8. Security / 安全说明
+
+Review project roots, method roots, and output directories before running a command.
+Do not commit credentials, private data, filled project CFG files, or restricted
+scientific products.
+
+运行命令前检查项目根目录、方法根目录和输出目录。不要提交凭据、私有数据、已填写的
+项目 CFG 或受限制的科学产品。
+
+## 9. License Notice / 许可说明
+
+No standalone license file is currently included. Confirm usage and redistribution
+terms before distributing this repository or derived software.
+
+本仓库当前未包含独立许可证文件。在分发本仓库或衍生软件前，请先确认使用与再分发
+条款。
