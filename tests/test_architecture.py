@@ -92,8 +92,10 @@ class ArchitectureTests(unittest.TestCase):
             {path.name for path in (example_root / "analysis").glob("*.cfg")},
             {
                 "gamma_baseline.cfg",
+                "gamma_geocoding.cfg",
                 "gamma_interferogram.cfg",
                 "gamma_mcf_unwrapping.cfg",
+                "gamma_quad_detrending.cfg",
                 "insar_filtering.cfg",
             },
         )

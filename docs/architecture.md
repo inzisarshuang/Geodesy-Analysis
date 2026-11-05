@@ -46,22 +46,24 @@ Analysis 只读取 `registered_stack.json`，不扫描 PRE 文件夹猜测影像
 目录身份。项目输入必须留在项目内，Analysis 输出与日志则必须留在正式 case 内；
 解析后的符号链接同样接受边界检查。
 
-当前 GAMMA 契约固定使用：
+当前 GAMMA 契约以 `<case_root>/<processing_method>` 为方法根，固定使用：
 
-- `PRE/GAMMA/RSLC_SUBSET/registered_stack.json` 作为 Analysis 输入；
-- `ANALYSIS/BASELINE_SELECTION/GAMMA/` 与 `ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA/` 作为科学输出；
-- `INTERFEROGRAM/MLI/` 与 `INTERFEROGRAM/PAIRS/<日期对>/` 组织自有资产；
-- `LOG/ANALYSIS/BASELINE_SELECTION/GAMMA/` 与 `LOG/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA/` 保存日志。
-- `ANALYSIS/FILTERING/<METHOD>/` 与 `LOG/ANALYSIS/FILTERING/<METHOD>/` 按滤波方法
+- `RSLC/registered_stack.json` 或 `RSLC/SUBSET/registered_stack.json` 作为 Analysis 输入；
+- `BASELINE/`、`GEOCODING/` 与 `INTF/` 作为科学输出；
+- `INTF/MLI/` 与 `INTF/PAIRS/<日期对>/` 组织自有资产；
+- `LOG/ANALYSIS/<STAGE>/` 保存日志。
+- `FILTERING/<METHOD>/` 按滤波方法
   保存统一产品和日志；不引入 `main`、`test` 或强制 `run_id`。
-- `ANALYSIS/UNWRAPPING/GAMMA_MCF/` 只表示当前解缠方法；上游滤波方法记录在清单
+- `UNW/GAMMA_MCF/` 只表示当前解缠方法；上游滤波方法记录在清单
   lineage 中，不继续嵌套到目录名。
-- `VISUALIZATION/INTERFEROGRAM_GENERATION/GAMMA/`、`VISUALIZATION/FILTERING/<METHOD>/`
-  和 `VISUALIZATION/UNWRAPPING/GAMMA_MCF/` 保存对应 Analysis runner 同步生成的
-  GAMMA DISP 原生质量检查 BMP；图片按阶段/方法平铺，不建立日期对子目录。
+- `GEOCODING/` 集中保存本次视数的地理编码几何产品；
+  `FIGURES/INTF/`、`FIGURES/FILTERING/<METHOD>/` 和 `FIGURES/UNW/GAMMA_MCF/`
+  保存各自阶段的 GAMMA DISP 原生 BMP 快视图。
+  图片按阶段/方法平铺，不建立日期对子目录。
 
-新 writer 只发布 portable schema v2：同一清单拥有的资产使用清单相对路径，跨阶段
-引用使用明确命名的项目相对字段。迁移期 reader 仍接受 schema v1。Analysis 只拥有
+新 writer 只发布 schema v2：同一清单拥有的资产使用清单相对路径，跨阶段引用使用
+明确命名的项目相对字段；用户指定项目外输出时，相应路径字段存绝对路径。迁移期
+reader 仍接受 schema v1。Analysis 只拥有
 与科学命令同步生成的 GAMMA DISP 质检图，不依赖 Matplotlib、PyGMT 或
 Geodesy-Visualization。Geodesy-Visualization 独立负责地图排版、论文图和其他二次
 渲染。以后迁移去趋势、大气改正等阶段时沿用同一阶段自带原生质检图的规则。

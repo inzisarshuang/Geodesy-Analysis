@@ -6,7 +6,7 @@ time-series analysis.
 
 本仓库负责传感器预处理之后的科学分析。目前已建立从配准 RSLC 到基线网络、差分
 干涉图和相干性的正式 GAMMA 工作流，并支持 NL-InSAR、GAMMA BM3D 与 GAMMA ADF
-三种清单驱动滤波方法以及 GAMMA MCF 解缠；大气改正和时序模块按后续阶段继续迁移。
+三种清单驱动滤波方法、GAMMA MCF 解缠和 quad 相位去趋势；大气改正和时序模块按后续阶段继续迁移。
 
 ## 1. Project Structure / 项目结构
 
@@ -18,7 +18,8 @@ Geodesy-Analysis/
 │       ├── baseline_selection/         # 基线网络计算与选择
 │       ├── interferogram_generation/   # MLI、差分干涉图与相干性
 │       ├── filtering/                  # NL-InSAR、GAMMA BM3D、GAMMA ADF
-│       └── unwrapping/gamma/mcf/       # GAMMA MCF 解缠
+│       ├── unwrapping/gamma/mcf/       # GAMMA MCF 解缠
+│       └── detrending/gamma/quad/      # GAMMA quad 相位去趋势
 ├── config_examples/
 │   └── analysis/                       # Analysis 阶段正式 CFG 示例
 ├── docs/
@@ -39,9 +40,10 @@ Geodesy-Analysis/
 3. `geodesy-analysis-gamma-interferogram` 按网络生成 MLI、差分干涉图和相干性。
 4. `geodesy-analysis-filtering` 从干涉清单选择方法并发布统一滤波清单。
 5. `geodesy-analysis-gamma-mcf` 从一个显式滤波清单生成掩膜并执行 MCF 解缠。
+6. `geodesy-analysis-gamma-quad-detrend` 校验 MCF、滤波和干涉来源链，并对所选相位去趋势。
 
-第 3–5 步在同一个 Analysis 命令中同步调用 GAMMA DISP，分别生成强度、相位、
-相干性、滤波和解缠 BMP 质检图；不需要独立的可视化 CFG 或第二次命令。
+第 3–6 步在同一个 Analysis 命令中同步调用 GAMMA DISP，分别生成强度、相位、
+相干性、滤波、解缠和去趋势 BMP 质检图；不需要独立的可视化 CFG 或第二次命令。
 
 详细操作见 [GAMMA InSAR workflow](docs/workflows/gamma_insar.md)。
 
@@ -63,6 +65,7 @@ Geodesy-Analysis/
 /home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-interferogram --help
 /home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-filtering --help
 /home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-mcf --help
+/home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-quad-detrend --help
 ```
 
 ## 4. Quick Start / 快速开始
@@ -83,33 +86,34 @@ geodesy-analysis-gamma-interferogram --config /absolute/PROJECT/config/analysis/
 geodesy-analysis-filtering --config /absolute/PROJECT/config/analysis/insar_filtering.cfg --dry-run
 geodesy-analysis-filtering --config /absolute/PROJECT/config/analysis/insar_filtering.cfg --case nl_insar
 geodesy-analysis-gamma-mcf --config /absolute/PROJECT/config/analysis/gamma_mcf_unwrapping.cfg --case main
+geodesy-analysis-gamma-quad-detrend --config /absolute/PROJECT/config/analysis/gamma_quad_detrending.cfg --case main --dry-run
+geodesy-analysis-gamma-quad-detrend --config /absolute/PROJECT/config/analysis/gamma_quad_detrending.cfg --case main
 ```
 
 ## 5. Outputs and Logs / 结果与日志
 
-- PRE 输入：`<case_root>/PRE/GAMMA/RSLC_SUBSET/registered_stack.json`
-- 基线结果：`<case_root>/ANALYSIS/BASELINE_SELECTION/GAMMA/`
-- 干涉结果：`<case_root>/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA/`，内部使用 `MLI/` 与
+- PRE 输入：`<processing_root>/RSLC/registered_stack.json` 或 `RSLC/SUBSET/registered_stack.json`
+- 基线结果：`<processing_root>/BASELINE/`
+- 干涉结果：`<processing_root>/INTF/`，内部使用 `MLI/` 与
   `PAIRS/<日期对>/`
-- 基线日志：`<case_root>/LOG/ANALYSIS/BASELINE_SELECTION/GAMMA/`
-- 干涉日志：`<case_root>/LOG/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA/`
-- 滤波结果：`<case_root>/ANALYSIS/FILTERING/{NL_INSAR,GAMMA_BM3D,GAMMA_ADF}/`
-- 滤波日志：`<case_root>/LOG/ANALYSIS/FILTERING/<METHOD>/`
-- 解缠结果：`<case_root>/ANALYSIS/UNWRAPPING/GAMMA_MCF/`
-- 解缠日志：`<case_root>/LOG/ANALYSIS/UNWRAPPING/GAMMA_MCF/`
-- 干涉质检图：`<case_root>/VISUALIZATION/INTERFEROGRAM_GENERATION/GAMMA/`
-- 滤波质检图：`<case_root>/VISUALIZATION/FILTERING/<METHOD>/`
-- 解缠质检图：`<case_root>/VISUALIZATION/UNWRAPPING/GAMMA_MCF/`
+- 本次干涉视数的 GEO 几何结果：由 `gamma_geocoding.cfg` 的 `output_dir` 指定，包含
+  匹配网格的 WGS84 radar height，以及 `gc_map2` 按 SAR 覆盖范围裁剪的
+  `demcrop.dem` / `demcrop.dem_par`；地图坐标栅格使用该 `.dem_par` 执行 `data2geotiff`
+- 科学结果：`FILTERING/<METHOD>/`、`UNW/GAMMA_MCF/`、`DETRENDING/GAMMA_QUAD/`
+- 日志：`<processing_root>/LOG/ANALYSIS/<STAGE>/`
+- 质检图：`<processing_root>/FIGURES/{INTF,FILTERING,UNW,DETRENDING}/...`
 
-只有清单和所有核心文件通过检查后才发布正式目录。相同输入可安全跳过；输入或参数
-变化时停止并要求用户处理旧结果，不静默覆盖。新写出的 Analysis 清单均为 portable
-schema v2；迁移期读端继续接受 schema v1。上述 GAMMA DISP BMP 是各科学阶段拥有的
+只有清单和所有核心文件通过检查后才发布正式目录。完整且签名一致的结果直接跳过；
+只缺质检图时仅补图，不重跑科学命令。残缺结果或签名变化不会自动覆盖，用户检查后
+删除对应结果目录或指定新的 `output_dir` 再运行。干涉科学、GEO 和快视图输出均可在 CFG 中指定
+项目相对路径或任意绝对路径。新写出的 Analysis 清单使用 schema v2；项目内路径采用
+相对形式，外部输出路径记录为绝对形式。迁移期读端继续接受 schema v1。上述 GAMMA DISP BMP 是各科学阶段拥有的
 原生质量检查图，按阶段/方法平铺。Geodesy-Visualization 继续负责基线网络图、
 PyGMT 地图、论文图和其他二次渲染。
 
 ## 6. Current Scope / 当前范围
 
-本阶段完成到 GAMMA MCF 解缠。大气改正、MintPy、DS-InSAR 不在
+本阶段完成到 GAMMA quad 相位去趋势。大气改正、MintPy、DS-InSAR 不在
 当前完成声明内。旧脚本在真实数据对照完成前保留为回退来源，但新代码不导入旧仓库。
 本次代码重构只改变新运行的契约，不移动、复制或删除现有研究项目数据；真实项目迁移
 由后续独立的可预览迁移任务完成。
