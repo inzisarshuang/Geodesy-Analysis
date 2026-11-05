@@ -134,4 +134,3 @@
 - [ ] **Step 4:** Update user documentation with the method-centric tree, skip rules, and delete-to-rerun workflow.
 - [ ] **Step 5:** Run focused workflow tests, all example loaders, `compileall`, and `git diff --check`.
 - [ ] **Step 6:** Commit as `feat: repair analysis quicklooks independently`.
-

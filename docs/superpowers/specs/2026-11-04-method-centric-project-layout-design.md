@@ -1,7 +1,7 @@
 # Method-Centric Project Layout and Central FIGURES Design
 
-**Date:** 2026-11-04  
-**Status:** Proposed for user approval  
+**Date:** 2026-11-04
+**Status:** Approved
 **Scope:** Geodesy-1Preprocessing, Geodesy-2Analysis,
 Geodesy-3Data_Adapter, Geodesy-4Visualization, and the
 `Gansu_Jishishan_LT1` study project
@@ -405,4 +405,3 @@ Verification is intentionally focused rather than exhaustive:
 The implementation must use the existing `envInSAR` environment for repository
 tests and real-project checks unless a workflow explicitly belongs to another
 already-established environment.
-
