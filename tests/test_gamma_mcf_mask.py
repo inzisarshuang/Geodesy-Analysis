@@ -49,6 +49,7 @@ class GammaMcfMaskTests(unittest.TestCase):
             external_mask=external_path,
             mask_operation=operation,
             output_dir=case_root / "ANALYSIS/UNWRAPPING/GAMMA_MCF",
+            visualization_dir=case_root / "VISUALIZATION/UNWRAPPING/GAMMA_MCF",
         )
         filtering = FilteringManifest(filtering_path, "digest", "nl_insar", filtering_path, "upstream", mean_path)
         dummy = case_root / "dummy"

@@ -27,6 +27,10 @@ class GammaMcfCliTests(unittest.TestCase):
             self.assertEqual(payload["method"], "gamma_mcf")
             self.assertEqual(payload["filtering_method"], "nl_insar")
             self.assertEqual(payload["pair_count"], 2)
+            self.assertEqual(payload["available_pair_count"], 2)
+            self.assertEqual(
+                payload["pairs"], ["20231226-20240131", "20240131-20240212"]
+            )
             self.assertEqual(payload["output_dir"], str(root / "S1/ASCENDING_128/ANALYSIS/UNWRAPPING/GAMMA_MCF"))
             self.assertFalse((root / "S1/ASCENDING_128/ANALYSIS/UNWRAPPING").exists())
             self.assertFalse((root / "S1/ASCENDING_128/LOG").exists())
@@ -44,13 +48,30 @@ class GammaMcfCliTests(unittest.TestCase):
             with contextlib.redirect_stderr(stderr):
                 self.assertEqual(main(["--config", str(config), "--case", "missing", "--dry-run"]), 2)
 
+    def test_selected_case_ignores_invalid_unselected_case(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, _, config = GammaMcfPlanTests()._project(root)
+            config.write_text(
+                config.read_text(encoding="utf-8")
+                + "\n[case:broken]\nmcf_mode = invalid\n",
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                self.assertEqual(
+                    main(["--config", str(config), "--case", "main", "--dry-run"]),
+                    0,
+                )
+            self.assertEqual(json.loads(stdout.getvalue())["case"], "main")
+
     def test_public_entry_example_and_docs_are_discoverable(self) -> None:
         repository = Path(__file__).resolve().parents[1]
         self.assertIn("geodesy-analysis-gamma-mcf", (repository / "pyproject.toml").read_text(encoding="utf-8"))
         example = (
             repository / "config_examples/analysis/gamma_mcf_unwrapping.cfg"
         ).read_text(encoding="utf-8")
-        for value in ("filtering_manifest", "reference_mode", "reference_range", "mcf_mode", "output_dir", "凭据安全"):
+        for value in ("filtering_manifest", "pairs.txt", "reference_mode", "reference_range", "mcf_mode", "output_dir", "凭据安全"):
             self.assertIn(value, example)
         workflow = (repository / "docs/workflows/gamma_insar.md").read_text(encoding="utf-8")
         self.assertLess(workflow.index("geodesy-analysis-filtering"), workflow.index("geodesy-analysis-gamma-mcf"))

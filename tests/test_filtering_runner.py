@@ -16,6 +16,7 @@ from geodesy_analysis.insar.filtering.config import load_filtering_config
 from geodesy_analysis.insar.filtering.methods.gamma.adf import adf_commands
 from geodesy_analysis.insar.filtering.methods.gamma.bm3d import bm3d_commands
 from geodesy_analysis.insar.filtering.plan import build_filtering_plan
+from geodesy_analysis.insar.filtering.publication import filtering_input_signature
 from geodesy_analysis.insar.filtering.runner import run_filtering
 
 
@@ -133,27 +134,38 @@ class FilteringRunnerTests(unittest.TestCase):
                 plan, command_runner=fake, progress_sink=lambda _: None
             )
             self.assertEqual(summary.pair_count, 1)
-            self.assertEqual([call[0] for call in fake.calls], ["rasdt_pwr", "rasdt_pwr"])
-            self.assertEqual([call[2] for call in fake.calls], ["-", "-"])
+            self.assertEqual([call[0] for call in fake.calls], ["rasmph", "rasdt_pwr"])
+            self.assertEqual(fake.calls[0][4], "0")
+            self.assertEqual(fake.calls[1][2], "-")
             self.assertEqual([call[-2] for call in fake.calls], ["rmg.cm", "cc.cm"])
             self._assert_publication(plan, "nl_insar", None)
             self.assertTrue((plan.case.output_dir / "coherent_points/points.csv").is_file())
+            provenance = json.loads(
+                (plan.case.output_dir / "provenance.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(provenance["parameters"]["search_window"], 3)
+            self.assertEqual(provenance["parameters"]["filter_threshold"], 0)
+            self.assertEqual(provenance["quicklook_commands"]["phase"]["command"], "rasmph")
 
-    def test_matching_output_skips_but_changed_parameters_conflict(self) -> None:
+    def test_complete_result_skips_and_changed_parameters_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root, "gamma_bm3d")
             run_filtering(plan, command_runner=_FakeGamma(), progress_sink=lambda _: None)
-            skipped = run_filtering(plan, command_runner=_FakeGamma(), progress_sink=lambda _: None)
-            self.assertEqual(skipped.status, "skipped")
+            repeated_fake = _FakeGamma()
+            repeated = run_filtering(plan, command_runner=repeated_fake, progress_sink=lambda _: None)
+            self.assertEqual(repeated.status, "skipped")
+            self.assertEqual(repeated_fake.calls, [])
+
             config = root / "config/analysis/insar_filtering.cfg"
             config.write_text(config.read_text(encoding="utf-8") + "bm3d_block_size = 12\n", encoding="utf-8")
             changed = build_filtering_plan(load_filtering_config(config)[0])
-            with self.assertRaisesRegex(FileExistsError, "different inputs"):
-                run_filtering(changed, command_runner=_FakeGamma(), progress_sink=lambda _: None)
-            self.assertFalse(plan.case.output_dir.with_name(plan.case.output_dir.name + "-1").exists())
+            changed_fake = _FakeGamma()
+            with self.assertRaisesRegex(RuntimeError, "signature changed"):
+                run_filtering(changed, command_runner=changed_fake, progress_sink=lambda _: None)
+            self.assertEqual(changed_fake.calls, [])
 
-    def test_upstream_quicklook_metadata_does_not_invalidate_scientific_restart(self) -> None:
+    def test_upstream_quicklook_metadata_does_not_block_recomputation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root, "gamma_bm3d")
@@ -162,8 +174,8 @@ class FilteringRunnerTests(unittest.TestCase):
             scientific_digest = hashlib.sha256(source.read_bytes()).hexdigest()
             payload = json.loads(source.read_text(encoding="utf-8"))
             payload["scientific_manifest_digest"] = scientific_digest
-            payload["visualization_dir_project_path"] = (
-                "S1/ASCENDING_128/VISUALIZATION/INTERFEROGRAM_GENERATION/GAMMA"
+            payload["quicklook_output_dir_project_path"] = (
+                "S1/ASCENDING_128/ANALYSIS/GEO/GAMMA"
             )
             source.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
@@ -205,7 +217,7 @@ class FilteringRunnerTests(unittest.TestCase):
             )
             self.assertEqual(len(failed), 1)
 
-    def test_legacy_output_repairs_only_visualization(self) -> None:
+    def test_missing_quicklooks_are_repaired_without_science_commands(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root, "gamma_bm3d")
@@ -222,20 +234,13 @@ class FilteringRunnerTests(unittest.TestCase):
             provenance.pop("quicklook_commands")
             provenance_path.write_text(json.dumps(provenance), encoding="utf-8")
             shutil.rmtree(plan.case.visualization_dir)
-            scientific = {
-                path: path.read_bytes()
-                for path in plan.case.output_dir.rglob("*")
-                if path.is_file() and path.name not in {"filtering_manifest.json", "provenance.json"}
-            }
-
             fake = _FakeGamma()
             summary = run_filtering(plan, command_runner=fake, progress_sink=lambda _: None)
 
-            self.assertEqual(summary.status, "repaired")
+            self.assertEqual(summary.status, "figures_repaired")
             self.assertEqual([call[0] for call in fake.calls], ["rasmph", "rasdt_pwr"])
-            self.assertEqual({path: path.read_bytes() for path in scientific}, scientific)
 
-    def test_partial_inventory_repairs_but_unrelated_content_conflicts(self) -> None:
+    def test_figure_repair_preserves_unrelated_visualization_contents(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root, "gamma_adf")
@@ -244,17 +249,15 @@ class FilteringRunnerTests(unittest.TestCase):
             phase.unlink()
             fake = _FakeGamma()
             summary = run_filtering(plan, command_runner=fake, progress_sink=lambda _: None)
-            self.assertEqual(summary.status, "repaired")
+            self.assertEqual(summary.status, "figures_repaired")
             self.assertEqual([call[0] for call in fake.calls], ["rasmph"])
 
-            phase.unlink()
             unrelated = plan.case.visualization_dir / "notes.txt"
             unrelated.write_text("keep\n", encoding="utf-8")
-            conflict = _FakeGamma()
-            with self.assertRaisesRegex(FileExistsError, "unexpected entry"):
-                run_filtering(plan, command_runner=conflict, progress_sink=lambda _: None)
-            self.assertEqual(conflict.calls, [])
-            self.assertEqual(unrelated.read_text(encoding="utf-8"), "keep\n")
+            overwrite = _FakeGamma()
+            run_filtering(plan, command_runner=overwrite, progress_sink=lambda _: None)
+            self.assertEqual(overwrite.calls, [])
+            self.assertTrue(unrelated.exists())
 
     def test_expected_quicklook_name_cannot_be_a_symlink(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -267,19 +270,49 @@ class FilteringRunnerTests(unittest.TestCase):
             outside.write_bytes(b"external")
             target.symlink_to(outside)
 
-            with self.assertRaisesRegex(FileExistsError, "unexpected entry"):
-                run_filtering(
-                    plan, command_runner=_FakeGamma(), progress_sink=lambda _: None
-                )
+            run_filtering(plan, command_runner=_FakeGamma(), progress_sink=lambda _: None)
+            self.assertFalse(target.is_symlink())
+            self.assertEqual(outside.read_bytes(), b"external")
 
-    def test_science_publication_failure_rolls_back_new_visualization(self) -> None:
+    def test_complete_output_skips_even_when_delegate_would_fail(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root, "gamma_adf")
+            run_filtering(plan, command_runner=_FakeGamma(), progress_sink=lambda _: None)
+            existing = {
+                path: path.read_bytes()
+                for directory in (plan.case.output_dir, plan.case.visualization_dir)
+                for path in directory.rglob("*")
+                if path.is_file()
+            }
+            fake = _FakeGamma("adf")
+            summary = run_filtering(
+                plan,
+                command_runner=fake,
+                progress_sink=lambda _: None,
+            )
+            self.assertEqual(summary.status, "skipped")
+            self.assertEqual(fake.calls, [])
+            self.assertEqual({path: path.read_bytes() for path in existing}, existing)
+
+    def test_complete_output_does_not_enter_publication(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = self._plan(root, "gamma_adf")
+            run_filtering(plan, command_runner=_FakeGamma(), progress_sink=lambda _: None)
+            existing = {
+                path: path.read_bytes()
+                for directory in (plan.case.output_dir, plan.case.visualization_dir)
+                for path in directory.rglob("*")
+                if path.is_file()
+            }
             real_replace = __import__("os").replace
 
             def fail_science_publication(source, destination):
-                if Path(destination) == plan.case.output_dir:
+                if (
+                    Path(destination) == plan.case.output_dir
+                    and Path(source).name != "previous"
+                ):
                     raise OSError("synthetic science publication failure")
                 return real_replace(source, destination)
 
@@ -287,15 +320,14 @@ class FilteringRunnerTests(unittest.TestCase):
                 "geodesy_analysis.io.os.replace",
                 side_effect=fail_science_publication,
             ):
-                with self.assertRaisesRegex(OSError, "science publication failure"):
-                    run_filtering(
-                        plan,
-                        command_runner=_FakeGamma(),
-                        progress_sink=lambda _: None,
-                    )
+                summary = run_filtering(
+                    plan,
+                    command_runner=_FakeGamma(),
+                    progress_sink=lambda _: None,
+                )
+            self.assertEqual(summary.status, "skipped")
 
-            self.assertFalse(plan.case.output_dir.exists())
-            self.assertFalse(plan.case.visualization_dir.exists())
+            self.assertEqual({path: path.read_bytes() for path in existing}, existing)
 
     def _assert_publication(self, plan, method: str, expected_mean: float | None) -> None:
         output = plan.case.output_dir
@@ -338,6 +370,7 @@ class FilteringRunnerTests(unittest.TestCase):
         )
         self.assertFalse((plan.case.visualization_dir / "pairs").exists())
         self.assertEqual(provenance["input_signature"], manifest["input_signature"])
+        self.assertIn("parameters", provenance)
         self.assertNotIn(str(output.parents[4]), json.dumps(manifest))
 
 

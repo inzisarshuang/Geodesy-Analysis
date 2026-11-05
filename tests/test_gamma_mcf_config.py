@@ -49,36 +49,42 @@ class GammaMcfConfigTests(unittest.TestCase):
                 root / "S1/ASCENDING_128/VISUALIZATION/UNWRAPPING/GAMMA_MCF",
             )
 
-    def test_explicit_visualization_directory_is_case_confined_and_disjoint(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
+    def test_explicit_outputs_support_absolute_paths_and_remain_disjoint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as external:
             root = Path(directory)
             self._files(root)
+            output = Path(external) / "unwrapped"
+            visualization = Path(external) / "quicklooks"
             (case,) = load_gamma_mcf_config(
                 self._write(
                     root,
                     self._body(
                         root,
-                        "visualization_dir = S1/ASCENDING_128/VISUALIZATION/UNWRAPPING/custom",
-                    ),
+                        f"output_dir = {output}\nvisualization_dir = {visualization}",
+                    )
                 )
             )
-            self.assertEqual(
-                case.visualization_dir,
-                root / "S1/ASCENDING_128/VISUALIZATION/UNWRAPPING/custom",
-            )
+            self.assertEqual(case.output_dir, output.resolve())
+            self.assertEqual(case.visualization_dir, visualization.resolve())
 
-            for value in (
-                "S1/DESCENDING_135/VISUALIZATION/UNWRAPPING/GAMMA_MCF",
-                "S1/ASCENDING_128/ANALYSIS/UNWRAPPING/GAMMA_MCF",
-                "S1/ASCENDING_128/ANALYSIS/FILTERING/NL_INSAR",
-            ):
-                with self.subTest(value=value), self.assertRaises(ValueError):
-                    load_gamma_mcf_config(
-                        self._write(
-                            root,
-                            self._body(root, f"visualization_dir = {value}"),
-                        )
+            with self.assertRaisesRegex(ValueError, "must not overlap"):
+                load_gamma_mcf_config(
+                    self._write(
+                        root,
+                        self._body(root, f"output_dir = {output}\nvisualization_dir = {output}"),
                     )
+                )
+
+            with self.assertRaisesRegex(ValueError, "filtering inputs"):
+                load_gamma_mcf_config(
+                    self._write(
+                        root,
+                        self._body(
+                            root,
+                            "output_dir = S1/ASCENDING_128/ANALYSIS/FILTERING/NL_INSAR",
+                        ),
+                    )
+                )
 
     def test_manual_reference_external_mask_and_explicit_output(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -97,6 +103,26 @@ class GammaMcfConfigTests(unittest.TestCase):
             self.assertEqual(case.external_mask, external)
             self.assertEqual(case.mask_operation, "or")
             self.assertEqual(case.output_dir, root / "custom/unwrapped")
+
+    def test_discovers_case_root_pair_list_and_protects_it_from_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._files(root)
+            pair_list = root / "S1/ASCENDING_128/pairs.txt"
+            pair_list.write_text("20231226-20240131\n", encoding="utf-8")
+            (case,) = load_gamma_mcf_config(self._write(root, self._body(root)))
+            self.assertEqual(case.pair_list, pair_list.resolve())
+
+            with self.assertRaisesRegex(ValueError, "must not overlap filtering inputs"):
+                load_gamma_mcf_config(
+                    self._write(
+                        root,
+                        self._body(
+                            root,
+                            f"output_dir = {pair_list}",
+                        ),
+                    )
+                )
 
     def test_requires_explicit_output_without_analysis_ancestor(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -127,8 +153,27 @@ class GammaMcfConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside:
             root = Path(directory)
             self._files(root)
-            with self.assertRaisesRegex(ValueError, "project root"):
-                load_gamma_mcf_config(self._write(root, self._body(root, f"output_dir = {outside}")))
+            (case,) = load_gamma_mcf_config(
+                self._write(root, self._body(root, f"output_dir = {Path(outside) / 'unwrapped'}"))
+            )
+            self.assertEqual(case.output_dir, Path(outside) / "unwrapped")
+
+    def test_selected_case_ignores_invalid_unselected_case(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._files(root)
+            config = self._write(
+                root,
+                self._body(root)
+                + """
+[case:unselected]
+mcf_mode = invalid
+""",
+            )
+            (case,) = load_gamma_mcf_config(config, case_name="main")
+            self.assertEqual(case.name, "main")
+            with self.assertRaisesRegex(ValueError, "unknown case"):
+                load_gamma_mcf_config(config, case_name="missing")
 
 
 if __name__ == "__main__":

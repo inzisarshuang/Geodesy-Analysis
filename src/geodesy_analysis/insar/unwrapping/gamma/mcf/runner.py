@@ -12,15 +12,12 @@ import numpy as np
 
 from geodesy_analysis.common.command import SubprocessCommandRunner
 from geodesy_analysis.common.progress import emit_progress
+from geodesy_analysis.common.reuse import ReuseState, classify_analysis_output
 from geodesy_analysis.insar.common.gamma_quicklooks import (
     require_nonempty_quicklook,
     unwrapped_phase_quicklook_command,
 )
-from geodesy_analysis.io import (
-    atomic_output_directories,
-    atomic_output_directory,
-    atomic_output_path,
-)
+from geodesy_analysis.io import atomic_output_directories
 
 from .mask import ReferencePoint, build_unwrapping_mask, resolve_reference_point
 from .models import GammaMcfPlan, UnwrappingPair
@@ -34,13 +31,6 @@ class GammaMcfRunSummary:
     status: str
     pair_count: int
     output_dir: Path
-
-
-@dataclass(frozen=True)
-class _ExistingMcf:
-    summary: GammaMcfRunSummary
-    manifest: dict[str, object]
-    provenance: dict[str, object]
 
 
 def mcf_command(
@@ -75,7 +65,11 @@ def _event(sink: Callable[[str], object], **values: object) -> None:
 
 
 def _project_path(plan: GammaMcfPlan, path: Path) -> str:
-    return Path(path).resolve().relative_to(plan.case.project_root).as_posix()
+    resolved = Path(path).resolve()
+    try:
+        return resolved.relative_to(plan.case.project_root).as_posix()
+    except ValueError:
+        return resolved.as_posix()
 
 
 def _next_failed(active: Path) -> Path:
@@ -101,75 +95,6 @@ def _preserve_logs(active: Path) -> Path:
     return failed
 
 
-def _output_asset(output: Path, value: object, expected: int) -> Path:
-    if not isinstance(value, str) or not value:
-        raise ValueError("unwrapping product path is required")
-    relative = Path(value)
-    if relative.is_absolute() or ".." in relative.parts:
-        raise ValueError("unwrapping product path is unsafe")
-    path = output / relative
-    if not path.is_file() or path.stat().st_size != expected:
-        raise ValueError("unwrapping product is missing or has wrong byte size")
-    return path
-
-
-def _read_existing(plan: GammaMcfPlan, signature: str) -> _ExistingMcf | None:
-    output = plan.case.output_dir
-    if not output.exists():
-        return None
-    try:
-        manifest = json.loads((output / "unwrapping_manifest.json").read_text(encoding="utf-8"))
-        provenance = json.loads((output / "provenance.json").read_text(encoding="utf-8"))
-        if manifest.get("input_signature") != signature or provenance.get("input_signature") != signature:
-            raise FileExistsError(f"unwrapping output was produced from different inputs: {output}")
-        if manifest.get("schema_version") != 2 or manifest.get("status") != "complete":
-            raise ValueError("unwrapping manifest is incomplete")
-        if manifest.get("case_id") != plan.case.case_id or manifest.get("method") != "gamma_mcf":
-            raise ValueError("unwrapping manifest identity is inconsistent")
-        pairs = manifest.get("pairs")
-        if not isinstance(pairs, list) or len(pairs) != len(plan.pairs):
-            raise ValueError("unwrapping manifest pair inventory is incomplete")
-        expected_size = plan.width * plan.lines * 4
-        for expected, item in zip(plan.pairs, pairs):
-            if not isinstance(item, dict) or item.get("pair") != expected.name:
-                raise ValueError("unwrapping manifest pair inventory is inconsistent")
-            _output_asset(output, item.get("unwrapped_path"), expected_size)
-        mask = manifest.get("mask")
-        if not isinstance(mask, dict) or not (output / mask.get("final_mask_path", "")).is_file():
-            raise ValueError("unwrapping manifest mask is missing")
-        return _ExistingMcf(
-            GammaMcfRunSummary("skipped", len(pairs), output),
-            manifest,
-            provenance,
-        )
-    except FileExistsError:
-        raise
-    except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
-        raise FileExistsError(f"unwrapping output is incomplete or invalid: {output}") from error
-
-
-def _quicklook_names(plan: GammaMcfPlan) -> set[str]:
-    return {f"{pair.name}.tflt.filt.unw.bmp" for pair in plan.pairs}
-
-
-def _validate_visualization_inventory(plan: GammaMcfPlan) -> None:
-    directory = plan.case.visualization_dir
-    if not directory.exists():
-        return
-    if not directory.is_dir() or directory.is_symlink():
-        raise FileExistsError(f"visualization output is not a directory: {directory}")
-    expected = _quicklook_names(plan)
-    unexpected = sorted(
-        path.name
-        for path in directory.iterdir()
-        if path.name not in expected or path.is_symlink() or not path.is_file()
-    )
-    if unexpected:
-        raise FileExistsError(
-            f"visualization directory has unexpected entry: {directory / unexpected[0]}"
-        )
-
-
 def _quicklook_path(plan: GammaMcfPlan, pair_name: str) -> str:
     return _project_path(
         plan, plan.case.visualization_dir / f"{pair_name}.tflt.filt.unw.bmp"
@@ -191,26 +116,6 @@ def _add_quicklook_metadata(
     }
 
 
-def _quicklooks_complete(plan: GammaMcfPlan, manifest: dict[str, object]) -> bool:
-    if manifest.get("visualization_dir_project_path") != _project_path(
-        plan, plan.case.visualization_dir
-    ):
-        return False
-    pairs = manifest.get("pairs")
-    if not isinstance(pairs, list) or any(
-        not isinstance(item, dict)
-        or item.get("quicklook_project_path") != _quicklook_path(plan, item.get("pair"))
-        for item in pairs
-    ):
-        return False
-    try:
-        for name in _quicklook_names(plan):
-            require_nonempty_quicklook(plan.case.visualization_dir / name, name)
-    except (OSError, RuntimeError):
-        return False
-    return True
-
-
 def _run_quicklook(
     plan: GammaMcfPlan,
     pair: UnwrappingPair,
@@ -219,53 +124,20 @@ def _run_quicklook(
     destination: Path,
     delegate,
     log_dir: Path,
-    atomic: bool,
 ) -> None:
     target = destination / f"{pair.name}.tflt.filt.unw.bmp"
+    if target.is_symlink():
+        target.unlink()
     if target.is_file() and target.stat().st_size:
         return
-
-    def execute(output: Path) -> None:
-        delegate.run(
-            unwrapped_phase_quicklook_command(unwrapped, plan.width, output),
-            cwd=destination,
-            stdin_text=None,
-            stdout_path=log_dir / f"{pair.name}.quicklook.stdout.log",
-            stderr_path=log_dir / f"{pair.name}.quicklook.stderr.log",
-        )
-        require_nonempty_quicklook(output, f"unwrapped phase quicklook for {pair.name}")
-
-    if atomic:
-        with atomic_output_path(target) as temporary:
-            execute(temporary)
-    else:
-        execute(target)
-
-
-def _existing_products(
-    plan: GammaMcfPlan, manifest: dict[str, object]
-) -> list[tuple[UnwrappingPair, Path]]:
-    by_name = {item["pair"]: item for item in manifest["pairs"]}  # type: ignore[union-attr]
-    expected_size = plan.width * plan.lines * 4
-    return [
-        (
-            pair,
-            _output_asset(
-                plan.case.output_dir,
-                by_name[pair.name]["unwrapped_path"],
-                expected_size,
-            ),
-        )
-        for pair in plan.pairs
-    ]
-
-
-def _write_json_atomic(path: Path, payload: dict[str, object]) -> None:
-    with atomic_output_path(path) as temporary:
-        temporary.write_text(
-            json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
-            encoding="utf-8",
-        )
+    delegate.run(
+        unwrapped_phase_quicklook_command(unwrapped, plan.width, target),
+        cwd=destination,
+        stdin_text=None,
+        stdout_path=log_dir / f"{pair.name}.quicklook.stdout.log",
+        stderr_path=log_dir / f"{pair.name}.quicklook.stderr.log",
+    )
+    require_nonempty_quicklook(target, f"unwrapped phase quicklook for {pair.name}")
 
 
 def run_gamma_mcf(
@@ -278,74 +150,50 @@ def run_gamma_mcf(
         raise TypeError("plan must be GammaMcfPlan")
     sink = progress_sink or print
     signature = unwrapping_input_signature(plan)
-    existing = _read_existing(plan, signature)
-    if existing is not None:
-        _validate_visualization_inventory(plan)
-        if _quicklooks_complete(plan, existing.manifest):
-            _event(
-                sink,
-                event="batch_finished",
-                status="skipped",
-                stage="publish",
-                total=existing.summary.pair_count,
-            )
-            return existing.summary
-        delegate = command_runner or SubprocessCommandRunner()
-        log_dir = plan.case.case_root / "LOG/ANALYSIS/UNWRAPPING/GAMMA_MCF"
-        _begin_logs(log_dir)
-        try:
-            products = _existing_products(plan, existing.manifest)
-            if plan.case.visualization_dir.exists():
-                for pair, unwrapped in products:
-                    _run_quicklook(
-                        plan,
-                        pair,
-                        unwrapped,
-                        destination=plan.case.visualization_dir,
-                        delegate=delegate,
-                        log_dir=log_dir,
-                        atomic=True,
-                    )
-            else:
-                with atomic_output_directory(plan.case.visualization_dir) as visual_staging:
-                    for pair, unwrapped in products:
-                        _run_quicklook(
-                            plan,
-                            pair,
-                            unwrapped,
-                            destination=visual_staging,
-                            delegate=delegate,
-                            log_dir=log_dir,
-                            atomic=False,
-                        )
-            _add_quicklook_metadata(plan, existing.manifest, existing.provenance)
-            _write_json_atomic(plan.case.output_dir / "provenance.json", existing.provenance)
-            _write_json_atomic(
-                plan.case.output_dir / "unwrapping_manifest.json", existing.manifest
-            )
-        except BaseException:
-            failed = _preserve_logs(log_dir)
-            _event(
-                sink,
-                event="batch_finished",
-                status="failed",
-                stage="failed",
-                total=existing.summary.pair_count,
-                failure_logs=str(failed),
-            )
-            raise
-        _event(
-            sink,
-            event="batch_finished",
-            status="repaired",
-            stage="publish",
-            total=existing.summary.pair_count,
-        )
-        return GammaMcfRunSummary(
-            "repaired", existing.summary.pair_count, existing.summary.output_dir
-        )
     delegate = command_runner or SubprocessCommandRunner()
-    log_dir = plan.case.case_root / "LOG/ANALYSIS/UNWRAPPING/GAMMA_MCF"
+    log_dir = (
+        plan.case.paths.processing_root / "LOG/ANALYSIS/UNW/GAMMA_MCF"
+        if plan.case.paths.processing_root is not None
+        else plan.case.case_root / "LOG/ANALYSIS/UNWRAPPING/GAMMA_MCF"
+    )
+    reuse = classify_analysis_output(
+        plan.case.output_dir, "unwrapping_manifest.json", signature
+    )
+    if reuse.science_reusable:
+        manifest = reuse.manifest or {}
+        expected_identity = {
+            "case_id": plan.case.case_id,
+            "filtering_manifest_digest": plan.filtering.source_digest,
+            "method": "gamma_mcf",
+            "pair_count": len(plan.pairs),
+        }
+        if any(manifest.get(key) != value for key, value in expected_identity.items()):
+            raise RuntimeError(
+                f"unwrapping manifest identity is inconsistent; existing science was not modified: {plan.case.output_dir}"
+            )
+        if reuse.state is ReuseState.FIGURES_MISSING:
+            _begin_logs(log_dir)
+            plan.case.visualization_dir.mkdir(parents=True, exist_ok=True)
+            for pair in plan.pairs:
+                _run_quicklook(
+                    plan,
+                    pair,
+                    plan.case.output_dir / "pairs" / pair.name / "pair.tflt.filt.unw",
+                    destination=plan.case.visualization_dir,
+                    delegate=delegate,
+                    log_dir=log_dir,
+                )
+            status = "figures_repaired"
+        else:
+            status = "skipped"
+        _event(sink, event="batch_finished", status=status, stage="reuse", total=len(plan.pairs) + 1)
+        return GammaMcfRunSummary(status, len(plan.pairs), plan.case.output_dir)
+    if reuse.state is not ReuseState.ABSENT:
+        raise RuntimeError(reuse.guidance)
+    if plan.case.visualization_dir.exists() or plan.case.visualization_dir.is_symlink():
+        raise RuntimeError(
+            "unwrapping science is absent but figure output already exists; inspect and delete the incomplete output group"
+        )
     _begin_logs(log_dir)
     total = len(plan.pairs) + 1
     _event(sink, event="batch_started", status="start", stage="prepare", total=total)
@@ -386,7 +234,6 @@ def run_gamma_mcf(
                     destination=visual_staging,
                     delegate=delegate,
                     log_dir=log_dir,
-                    atomic=False,
                 )
                 _event(sink, event="item_finished", status="complete", item=pair.name, index=index, total=total, stage="unwrap")
             reference_payload = {
@@ -397,6 +244,17 @@ def run_gamma_mcf(
                 "mode": reference.mode,
                 "range_index": reference.range_index,
             }
+            pair_selection = {
+                "available_pair_count": plan.available_pair_count,
+                "mode": "all" if plan.case.pair_list is None else "list",
+                "pair_list_project_path": (
+                    None
+                    if plan.case.pair_list is None
+                    else _project_path(plan, plan.case.pair_list)
+                ),
+                "pair_list_sha256": plan.pair_list_digest,
+                "selected_pairs": [pair.name for pair in plan.pairs],
+            }
             provenance: dict[str, object] = {
                 "case_id": plan.case.case_id,
                 "filtering_manifest_project_path": _project_path(plan, plan.filtering.source_path),
@@ -404,7 +262,9 @@ def run_gamma_mcf(
                 "filtering_method": plan.filtering.method,
                 "input_signature": signature,
                 "log_dir_project_path": _project_path(plan, log_dir),
+                "mask_coherence_scope": "all_filtering_pairs",
                 "mcf_mode": plan.case.mcf_mode,
+                "pair_selection": pair_selection,
                 "reference": reference_payload,
                 "schema_version": 2,
             }
@@ -422,8 +282,10 @@ def run_gamma_mcf(
                     "valid_count": mask.valid_count,
                     "valid_ratio": mask.valid_ratio,
                 },
+                "mask_coherence_scope": "all_filtering_pairs",
                 "mcf_mode": plan.case.mcf_mode,
                 "method": "gamma_mcf",
+                "pair_selection": pair_selection,
                 "pair_count": len(products),
                 "pairs": [
                     {
@@ -439,6 +301,23 @@ def run_gamma_mcf(
                 "status": "complete",
             }
             _add_quicklook_metadata(plan, manifest, provenance)
+            manifest["required_products"] = [
+                manifest["mask"]["binary_mask_path"],  # type: ignore[index]
+                manifest["mask"]["final_mask_path"],  # type: ignore[index]
+                manifest["mask"]["metadata_path"],  # type: ignore[index]
+                *[item["unwrapped_path"] for item in manifest["pairs"]],  # type: ignore[index]
+                "provenance.json",
+            ]
+            manifest["figures"] = [
+                Path(
+                    os.path.relpath(
+                        plan.case.visualization_dir
+                        / f"{pair.name}.tflt.filt.unw.bmp",
+                        start=plan.case.output_dir,
+                    )
+                ).as_posix()
+                for pair in plan.pairs
+            ]
             (staging / "provenance.json").write_text(
                 json.dumps(provenance, ensure_ascii=False, sort_keys=True, indent=2)
                 + "\n",

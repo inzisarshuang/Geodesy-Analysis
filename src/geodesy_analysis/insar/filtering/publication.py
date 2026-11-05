@@ -33,7 +33,7 @@ def gamma_parameter(path: Path, key: str) -> int:
     raise ValueError(f"missing {key} in GAMMA parameter file: {source}")
 
 
-def _method_parameters(plan: FilteringPlan) -> dict[str, object]:
+def filtering_parameters(plan: FilteringPlan) -> dict[str, object]:
     case = plan.case
     if case.method.value == "nl_insar":
         return {
@@ -69,7 +69,11 @@ def filtering_input_signature(plan: FilteringPlan) -> str:
     root = plan.case.project_root
 
     def relative(path: Path) -> str:
-        return Path(path).resolve().relative_to(root).as_posix()
+        resolved = Path(path).resolve()
+        try:
+            return resolved.relative_to(root).as_posix()
+        except ValueError:
+            return resolved.as_posix()
 
     payload = {
         "case_id": plan.case.case_id,
@@ -77,7 +81,7 @@ def filtering_input_signature(plan: FilteringPlan) -> str:
         "interferogram_manifest": relative(plan.manifest.source_path),
         "interferogram_manifest_digest": plan.manifest.source_digest,
         "method": plan.case.method.value,
-        "parameters": _method_parameters(plan),
+        "parameters": filtering_parameters(plan),
         "pairs": [
             {
                 "interferogram": relative(pair.interferogram),
@@ -92,4 +96,9 @@ def filtering_input_signature(plan: FilteringPlan) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-__all__ = ["ensure_nonempty", "filtering_input_signature", "gamma_parameter"]
+__all__ = [
+    "ensure_nonempty",
+    "filtering_input_signature",
+    "filtering_parameters",
+    "gamma_parameter",
+]

@@ -96,6 +96,68 @@ class GammaMcfPlanTests(unittest.TestCase):
             self.assertTrue(plan.radar_height.name.endswith("hgt_sim"))
             self.assertEqual(unwrapping_input_signature(plan), unwrapping_input_signature(plan))
 
+    def test_resolves_external_geocoded_height_from_interferogram_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as external:
+            root = Path(directory)
+            filtering, upstream, config = self._project(root)
+            height = Path(external) / "20231226.VV.wgs84.hgt"
+            np.ones((2, 3), dtype=">f4").tofile(height)
+            upstream_payload = json.loads(upstream.read_text(encoding="utf-8"))
+            upstream_payload["radar_height_project_path"] = str(height)
+            upstream.write_text(json.dumps(upstream_payload), encoding="utf-8")
+            filtering_payload = json.loads(filtering.read_text(encoding="utf-8"))
+            filtering_payload["interferogram_manifest_project_path"] = str(upstream)
+            filtering_payload["interferogram_manifest_digest"] = hashlib.sha256(
+                upstream.read_bytes()
+            ).hexdigest()
+            filtering.write_text(json.dumps(filtering_payload), encoding="utf-8")
+
+            plan = build_gamma_mcf_plan(load_gamma_mcf_config(config)[0])
+
+            self.assertEqual(plan.radar_height, height)
+
+    def test_pair_list_selects_subset_without_weakening_manifest_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            filtering, _, config = self._project(root)
+            pair_list = root / "S1/ASCENDING_128/pairs.txt"
+            pair_list.write_text(
+                "# Only unwrap the pair needed for this analysis\n"
+                "20240131-20240212\n",
+                encoding="utf-8",
+            )
+
+            plan = build_gamma_mcf_plan(load_gamma_mcf_config(config)[0])
+
+            self.assertEqual(plan.available_pair_count, 2)
+            self.assertEqual(
+                [pair.name for pair in plan.pairs], ["20240131-20240212"]
+            )
+            self.assertEqual(
+                plan.pair_list_digest,
+                hashlib.sha256(pair_list.read_bytes()).hexdigest(),
+            )
+            self.assertEqual(plan.mean_coherence, filtering.parent / "coh_ave.coh")
+
+    def test_pair_list_rejects_empty_duplicate_malformed_and_unknown_pairs(self) -> None:
+        cases = (
+            ("# no pair selected\n", "contains no pairs"),
+            (
+                "20231226-20240131\n20231226-20240131\n",
+                "duplicate pair list entry",
+            ),
+            ("2023-20240131\n", "invalid pair list entry"),
+            ("20231226-20240212\n", "not in filtering manifest"),
+        )
+        for contents, message in cases:
+            with self.subTest(contents=contents), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                filtering, _, config = self._project(root)
+                pair_list = root / "S1/ASCENDING_128/pairs.txt"
+                pair_list.write_text(contents, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, message):
+                    build_gamma_mcf_plan(load_gamma_mcf_config(config)[0])
+
     def test_rejects_malformed_missing_wrong_size_and_upstream_mismatch(self) -> None:
         mutations = (
             ("schema", lambda f, u, p: f.update(schema_version=1), "schema_version"),

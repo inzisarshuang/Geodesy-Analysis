@@ -11,7 +11,7 @@ from pathlib import Path
 
 from geodesy_analysis.common.progress import ConsoleProgress
 
-from .config import load_filtering_config, select_filtering_case
+from .config import load_filtering_config
 from .plan import build_filtering_plan
 from .runner import run_filtering
 
@@ -43,12 +43,7 @@ def _summary(plan) -> dict[str, object]:
 def main(arguments: Sequence[str] | None = None) -> int:
     options = _parser().parse_args(arguments)
     try:
-        configured = load_filtering_config(options.config)
-        selected = (
-            (select_filtering_case(configured, options.case),)
-            if options.case is not None
-            else configured
-        )
+        selected = load_filtering_config(options.config, case_name=options.case)
         plans = tuple(build_filtering_plan(case) for case in selected)
     except (FileNotFoundError, OSError, TypeError, ValueError) as error:
         print(f"ERROR: {error}", file=sys.stderr)

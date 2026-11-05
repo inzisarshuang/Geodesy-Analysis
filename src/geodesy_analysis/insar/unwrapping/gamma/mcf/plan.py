@@ -7,7 +7,10 @@ import json
 import re
 from pathlib import Path
 
-from geodesy_analysis.common.case_paths import resolve_case_input, resolve_project_input
+from geodesy_analysis.common.case_paths import (
+    resolve_case_input,
+    resolve_project_or_absolute_path,
+)
 from geodesy_analysis.insar.filtering.publication import ensure_nonempty, gamma_parameter
 
 from .models import FilteringManifest, GammaMcfCase, GammaMcfPlan, UnwrappingPair
@@ -64,7 +67,9 @@ def build_gamma_mcf_plan(case: GammaMcfCase) -> GammaMcfPlan:
     upstream_value = payload.get("interferogram_manifest_project_path")
     if not isinstance(upstream_value, str):
         raise ValueError("filtering manifest interferogram identity is required")
-    upstream = resolve_project_input(case.paths, upstream_value)
+    upstream = resolve_project_or_absolute_path(
+        case.paths, upstream_value, "interferogram manifest"
+    )
     upstream_raw = upstream.read_bytes()
     try:
         upstream_payload = json.loads(upstream_raw)
@@ -107,7 +112,11 @@ def build_gamma_mcf_plan(case: GammaMcfCase) -> GammaMcfPlan:
         raise ValueError("filtering grid does not match interferogram MLI grid")
 
     if upstream_payload.get("schema_version") == 2:
-        radar = resolve_project_input(case.paths, upstream_payload.get("radar_height_project_path", ""))
+        radar = resolve_project_or_absolute_path(
+            case.paths,
+            upstream_payload.get("radar_height_project_path", ""),
+            "radar height",
+        )
     else:
         radar_info = upstream_payload.get("radar_height")
         if not isinstance(radar_info, dict) or not isinstance(radar_info.get("path"), str):
@@ -118,11 +127,17 @@ def build_gamma_mcf_plan(case: GammaMcfCase) -> GammaMcfPlan:
     upstream_pairs = upstream_payload.get("pairs")
     if not isinstance(upstream_pairs, list):
         raise ValueError("interferogram manifest pair inventory is missing")
-    upstream_names = [item.get("pair") for item in upstream_pairs if isinstance(item, dict)]
+    if any(not isinstance(item, dict) for item in upstream_pairs):
+        raise ValueError("interferogram manifest pair item is invalid")
+    upstream_names = [item.get("pair") for item in upstream_pairs]
+    if any(not isinstance(name, str) or _PAIR.fullmatch(name) is None for name in upstream_names):
+        raise ValueError("interferogram manifest pair name is invalid")
+    if len(set(upstream_names)) != len(upstream_names):
+        raise ValueError("interferogram manifest contains duplicate pairs")
     raw_pairs = payload.get("pairs")
     if not isinstance(raw_pairs, list) or payload.get("pair_count") != len(raw_pairs):
         raise ValueError("filtering manifest pair inventory is incomplete")
-    pairs: list[UnwrappingPair] = []
+    all_pairs: list[UnwrappingPair] = []
     for item in raw_pairs:
         if not isinstance(item, dict) or not isinstance(item.get("products"), dict):
             raise ValueError("filtering manifest pair item is invalid")
@@ -135,10 +150,43 @@ def build_gamma_mcf_plan(case: GammaMcfCase) -> GammaMcfPlan:
         coherence = _asset(source.parent, products.get("filtered_coherence"), "filtered coherence")
         _size(filtered, complex_size, "filtered interferogram")
         _size(coherence, float_size, "filtered coherence")
-        pairs.append(UnwrappingPair(match.group(1), match.group(2), filtered, coherence))
-    pairs.sort(key=lambda item: item.name)
-    if [pair.name for pair in pairs] != sorted(upstream_names):
+        all_pairs.append(UnwrappingPair(match.group(1), match.group(2), filtered, coherence))
+    all_pairs.sort(key=lambda item: item.name)
+    if len({pair.name for pair in all_pairs}) != len(all_pairs):
+        raise ValueError("filtering manifest contains duplicate pairs")
+    if [pair.name for pair in all_pairs] != sorted(upstream_names):
         raise ValueError("filtering and interferogram pair inventory is inconsistent")
+    pair_list_digest = None
+    if case.pair_list is None:
+        pairs = all_pairs
+    else:
+        pair_list_bytes = case.pair_list.read_bytes()
+        pair_list_digest = hashlib.sha256(pair_list_bytes).hexdigest()
+        try:
+            pair_list_text = pair_list_bytes.decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise ValueError(f"pair list must be UTF-8 text: {case.pair_list}") from error
+        requested: list[str] = []
+        seen: set[str] = set()
+        available_names = {pair.name for pair in all_pairs}
+        for line_number, raw_line in enumerate(pair_list_text.splitlines(), start=1):
+            name = raw_line.split("#", 1)[0].strip()
+            if not name:
+                continue
+            if _PAIR.fullmatch(name) is None:
+                raise ValueError(
+                    f"invalid pair list entry on line {line_number}: {name!r}"
+                )
+            if name in seen:
+                raise ValueError(f"duplicate pair list entry on line {line_number}: {name}")
+            if name not in available_names:
+                raise ValueError(f"pair list entry is not in filtering manifest: {name}")
+            requested.append(name)
+            seen.add(name)
+        if not requested:
+            raise ValueError(f"pair list contains no pairs: {case.pair_list}")
+        by_name = {pair.name: pair for pair in all_pairs}
+        pairs = [by_name[name] for name in requested]
     scientific_digest = payload.get("scientific_manifest_digest")
     if scientific_digest is not None and (
         not isinstance(scientific_digest, str)
@@ -153,7 +201,18 @@ def build_gamma_mcf_plan(case: GammaMcfCase) -> GammaMcfPlan:
         interferogram_digest=upstream_digest,
         mean_coherence=mean,
     )
-    return GammaMcfPlan(case, filtering, tuple(pairs), width, lines, mean, tuple(mli_assets), radar)
+    return GammaMcfPlan(
+        case,
+        filtering,
+        tuple(pairs),
+        width,
+        lines,
+        mean,
+        tuple(mli_assets),
+        radar,
+        len(all_pairs),
+        pair_list_digest,
+    )
 
 
 __all__ = ["build_gamma_mcf_plan"]

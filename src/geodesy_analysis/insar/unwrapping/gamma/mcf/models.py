@@ -22,6 +22,7 @@ class GammaMcfCase:
     mask_operation: Literal["and", "or", "xor"]
     output_dir: Path
     visualization_dir: Path
+    pair_list: Path | None = None
 
     @property
     def name(self) -> str:
@@ -72,6 +73,8 @@ class GammaMcfPlan:
     mean_coherence: Path
     mli_assets: tuple[Path, ...]
     radar_height: Path
+    available_pair_count: int = 0
+    pair_list_digest: str | None = None
 
 
 __all__ = ["FilteringManifest", "GammaMcfCase", "GammaMcfPlan", "UnwrappingPair"]

@@ -101,36 +101,61 @@ method = gamma_adf
             )
             self.assertEqual(case.output_dir, (root / "results/manual_nl").resolve())
 
-    def test_explicit_visualization_directory_is_case_confined_and_disjoint(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
+    def test_explicit_absolute_outputs_may_be_outside_project_and_remain_disjoint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as external:
             root = Path(directory)
             self._manifest(root)
+            output = Path(external) / "science"
+            visualization = Path(external) / "quicklooks"
             (case,) = load_filtering_config(
                 self._write(
                     root,
                     self._body(
                         root,
-                        "visualization_dir = S1/ASCENDING_128/VISUALIZATION/FILTERING/custom",
-                    ),
+                        f"output_dir = {output}\nvisualization_dir = {visualization}",
+                    )
                 )
             )
             self.assertEqual(
-                case.visualization_dir,
-                root / "S1/ASCENDING_128/VISUALIZATION/FILTERING/custom",
+                case.output_dir,
+                output.resolve(),
             )
+            self.assertEqual(case.visualization_dir, visualization.resolve())
 
-            for value in (
-                "S1/DESCENDING_135/VISUALIZATION/FILTERING/NL_INSAR",
-                "S1/ASCENDING_128/ANALYSIS/FILTERING/NL_INSAR",
-                "S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA",
-            ):
-                with self.subTest(value=value), self.assertRaises(ValueError):
-                    load_filtering_config(
-                        self._write(
-                            root,
-                            self._body(root, f"visualization_dir = {value}"),
-                        )
+            with self.assertRaisesRegex(ValueError, "must not overlap"):
+                load_filtering_config(
+                    self._write(
+                        root,
+                        self._body(root, f"output_dir = {output}\nvisualization_dir = {output}"),
                     )
+                )
+            with self.assertRaisesRegex(ValueError, "log directory"):
+                load_filtering_config(
+                    self._write(
+                        root,
+                        self._body(
+                            root,
+                            "output_dir = S1/ASCENDING_128/LOG/ANALYSIS/FILTERING/NL_INSAR",
+                        ),
+                    )
+                )
+
+    def test_selected_case_does_not_validate_other_case(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._manifest(root)
+            config = self._write(
+                root,
+                self._body(root)
+                + """
+[case:unselected]
+method = unsupported
+""",
+            )
+            (case,) = load_filtering_config(config, case_name="main")
+            self.assertEqual(case.name, "main")
+            with self.assertRaisesRegex(ValueError, "unknown case"):
+                load_filtering_config(config, case_name="missing")
 
     def test_requires_explicit_output_when_manifest_has_no_analysis_ancestor(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -142,6 +167,19 @@ method = gamma_adf
             )
             with self.assertRaisesRegex(ValueError, "output_dir.*required"):
                 load_filtering_config(self._write(root, body))
+
+    def test_accepts_external_interferogram_manifest_with_explicit_output(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as external:
+            root = Path(directory)
+            manifest = self._manifest(Path(external), "results/interferogram_manifest.json")
+            body = self._body(root).replace(
+                "S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA/interferogram_manifest.json",
+                str(manifest),
+            )
+            (case,) = load_filtering_config(
+                self._write(root, body + "output_dir = ANALYSIS/FILTERING/custom\n")
+            )
+            self.assertEqual(case.interferogram_manifest, manifest.resolve())
 
     def test_rejects_unknown_missing_and_unsafe_configuration(self) -> None:
         with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside:
@@ -156,12 +194,20 @@ method = gamma_adf
                     "interferogram_manifest = S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA/missing.json",
                     "does not exist",
                 ),
-                ("method = nl_insar", f"method = nl_insar\noutput_dir = {outside}", "project root"),
             )
             for old, new, message in cases:
                 with self.subTest(new=new):
                     with self.assertRaisesRegex((ValueError, FileNotFoundError), message):
                         load_filtering_config(self._write(root, self._body(root).replace(old, new)))
+
+            external_output = Path(outside) / "external-output"
+            (case,) = load_filtering_config(
+                self._write(
+                    root,
+                    self._body(root, f"output_dir = {external_output}"),
+                )
+            )
+            self.assertEqual(case.output_dir, external_output.resolve())
 
 
 if __name__ == "__main__":

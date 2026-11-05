@@ -11,7 +11,7 @@ from pathlib import Path
 
 from geodesy_analysis.common.progress import ConsoleProgress
 
-from .config import load_gamma_mcf_config, select_gamma_mcf_case
+from .config import load_gamma_mcf_config
 from .plan import build_gamma_mcf_plan
 from .runner import run_gamma_mcf
 
@@ -33,6 +33,9 @@ def _summary(plan) -> dict[str, object]:
         "case_id": plan.case.case_id,
         "filtering_manifest": str(plan.filtering.source_path),
         "filtering_method": plan.filtering.method,
+        "pair_list": None if plan.case.pair_list is None else str(plan.case.pair_list),
+        "pairs": [pair.name for pair in plan.pairs],
+        "available_pair_count": plan.available_pair_count,
         "grid": {"lines": plan.lines, "width": plan.width},
         "mcf_mode": plan.case.mcf_mode,
         "method": "gamma_mcf",
@@ -46,12 +49,7 @@ def _summary(plan) -> dict[str, object]:
 def main(arguments: Sequence[str] | None = None) -> int:
     options = _parser().parse_args(arguments)
     try:
-        configured = load_gamma_mcf_config(options.config)
-        selected = (
-            (select_gamma_mcf_case(configured, options.case),)
-            if options.case is not None
-            else configured
-        )
+        selected = load_gamma_mcf_config(options.config, case_name=options.case)
         plans = tuple(build_gamma_mcf_plan(case) for case in selected)
     except (FileNotFoundError, OSError, TypeError, ValueError) as error:
         print(f"ERROR: {error}", file=sys.stderr)

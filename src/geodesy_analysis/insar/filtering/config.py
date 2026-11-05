@@ -9,10 +9,11 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from geodesy_analysis.common.case_paths import (
+    AnalysisCasePaths,
     bind_analysis_case,
-    resolve_case_input,
-    resolve_case_visualization_output,
+    resolve_project_or_absolute_path,
 )
+from geodesy_analysis.common.product_layout import AnalysisProductLayout
 
 from .models import FilteringCase, FilteringMethod
 
@@ -40,13 +41,22 @@ _BUILTIN_DEFAULTS = {
     "adf_steps": "5",
 }
 _VALUE_KEYS = set(_BUILTIN_DEFAULTS) | {
+    "project",
     "case_root",
+    "processing_root",
     "interferogram_manifest",
     "method",
     "output_dir",
+    "figure_dir",
     "visualization_dir",
 }
-_DEFAULT_KEYS = _VALUE_KEYS - {"case_root", "interferogram_manifest", "output_dir"}
+_DEFAULT_KEYS = _VALUE_KEYS - {
+    "project",
+    "case_root",
+    "processing_root",
+    "interferogram_manifest",
+    "output_dir",
+}
 
 
 def _unknown(section: configparser.SectionProxy, source: Path, allowed: set[str]) -> None:
@@ -83,18 +93,29 @@ def _unit_interval(values: dict[str, str], key: str, source: Path) -> float:
     return value
 
 
-def _project_output(root: Path, value: str) -> Path:
-    candidate = Path(value).expanduser()
-    if not candidate.is_absolute():
-        if "\\" in value or any(part in {"", ".", ".."} for part in value.split("/")):
-            raise ValueError("output_dir must be a POSIX project-relative path")
-        candidate = root / candidate
-    resolved = candidate.resolve()
-    try:
-        resolved.relative_to(root)
-    except ValueError as error:
-        raise ValueError(f"output_dir must stay inside project root: {resolved}") from error
-    return resolved
+def _paths_overlap(first: Path, second: Path) -> bool:
+    left = first.resolve()
+    right = second.resolve()
+    return left == right or left in right.parents or right in left.parents
+
+
+def _resolve_visualization_output(
+    paths: AnalysisCasePaths,
+    value: str,
+    *,
+    scientific_output: Path,
+    input_directory: Path,
+) -> Path:
+    visualization = resolve_project_or_absolute_path(
+        paths, value, "filtering visualization output"
+    )
+    for protected in (scientific_output, input_directory):
+        if _paths_overlap(visualization, protected):
+            raise ValueError(
+                "visualization output must not overlap scientific output or input: "
+                f"{visualization} overlaps {protected.resolve()}"
+            )
+    return visualization
 
 
 def _automatic_output(manifest: Path, method: FilteringMethod, case_root: Path) -> Path:
@@ -107,10 +128,14 @@ def _automatic_output(manifest: Path, method: FilteringMethod, case_root: Path) 
             except ValueError:
                 break
             return (ancestor / "FILTERING" / method.directory_name).resolve()
-    raise ValueError("output_dir is required when interferogram_manifest has no case-local ANALYSIS ancestor")
+    raise ValueError(
+        "output_dir is required when interferogram_manifest has no case-local ANALYSIS ancestor"
+    )
 
 
-def load_filtering_config(path: Path) -> tuple[FilteringCase, ...]:
+def load_filtering_config(
+    path: Path, *, case_name: str | None = None
+) -> tuple[FilteringCase, ...]:
     source = Path(path).expanduser().resolve(strict=True)
     parser = configparser.ConfigParser(interpolation=None, strict=True)
     try:
@@ -135,12 +160,24 @@ def load_filtering_config(path: Path) -> tuple[FilteringCase, ...]:
         _unknown(parser["defaults"], source, _DEFAULT_KEYS)
         defaults.update((key, value.strip()) for key, value in parser["defaults"].items())
 
+    case_sections = [
+        section_name
+        for section_name in parser.sections()
+        if section_name not in {"project", "defaults"}
+    ]
+    unsupported = next(
+        (name for name in case_sections if not name.startswith("case:")), None
+    )
+    if unsupported is not None:
+        raise ValueError(f"{source}: unsupported section [{unsupported}]")
+    if case_name is not None:
+        selected_section = f"case:{case_name}"
+        if selected_section not in case_sections:
+            raise ValueError(f"unknown case: {case_name}")
+        case_sections = [selected_section]
+
     cases: list[FilteringCase] = []
-    for section_name in parser.sections():
-        if section_name in {"project", "defaults"}:
-            continue
-        if not section_name.startswith("case:"):
-            raise ValueError(f"{source}: unsupported section [{section_name}]")
+    for section_name in case_sections:
         name = section_name.removeprefix("case:").strip()
         if not _CASE_NAME.fullmatch(name):
             raise ValueError(f"{source}: unsafe or empty case name: {name!r}")
@@ -148,27 +185,71 @@ def load_filtering_config(path: Path) -> tuple[FilteringCase, ...]:
         _unknown(section, source, _VALUE_KEYS)
         values = dict(defaults)
         values.update((key, value.strip()) for key, value in section.items())
-        missing = [key for key in ("case_root", "interferogram_manifest", "method") if not values.get(key)]
+        project_value = values.get("project", "") or values.get("case_root", "")
+        missing = [key for key in ("interferogram_manifest", "method") if not values.get(key)]
+        if not project_value:
+            missing.append("project/case_root")
         if missing:
             raise ValueError(f"{source}: [{section_name}] missing keys: {', '.join(missing)}")
         try:
             method = FilteringMethod(values["method"].lower())
         except ValueError as error:
             raise ValueError(f"{source}: method must be nl_insar, gamma_bm3d, or gamma_adf") from error
-        paths = bind_analysis_case(root, name, values["case_root"])
-        manifest = resolve_case_input(paths, values["interferogram_manifest"])
+        processing_value = values.get("processing_root", "").strip() or None
+        paths = bind_analysis_case(root, name, project_value, processing_value)
+        layout = AnalysisProductLayout(paths) if processing_value is not None else None
+        manifest = resolve_project_or_absolute_path(
+            paths, values["interferogram_manifest"], "interferogram manifest"
+        )
         if not manifest.is_file():
             raise FileNotFoundError(f"interferogram manifest does not exist: {manifest}")
         output_text = values.get("output_dir", "").strip()
-        output = _project_output(root, output_text) if output_text else _automatic_output(manifest, method, paths.case_root)
-        visualization_text = values.get("visualization_dir", "").strip()
-        visualization = resolve_case_visualization_output(
+        output = (
+            resolve_project_or_absolute_path(paths, output_text, "filtering output")
+            if output_text
+            else (
+                layout.product("FILTERING", method.directory_name)
+                if layout is not None
+                else _automatic_output(manifest, method, paths.case_root)
+            )
+        )
+        if _paths_overlap(output, manifest.parent):
+            raise ValueError(
+                "filtering output must not overlap interferogram inputs: "
+                f"{output} overlaps {manifest.parent.resolve()}"
+            )
+        visualization_text = (
+            values.get("figure_dir", "").strip()
+            or values.get("visualization_dir", "").strip()
+        )
+        visualization = _resolve_visualization_output(
             paths,
             visualization_text
-            or f"{paths.case_id}/VISUALIZATION/FILTERING/{method.directory_name}",
+            or (
+                layout.serialize(layout.figures("FILTERING", method.directory_name))
+                if layout is not None
+                else f"{paths.case_id}/VISUALIZATION/FILTERING/{method.directory_name}"
+            ),
             scientific_output=output,
-            inputs=(manifest,),
+            input_directory=manifest.parent,
         )
+        log_directory = (
+            layout.logs("FILTERING", method.directory_name)
+            if layout is not None
+            else paths.case_root
+            / "LOG"
+            / "ANALYSIS"
+            / "FILTERING"
+            / method.directory_name
+        )
+        if any(
+            _paths_overlap(candidate, log_directory)
+            for candidate in (output, visualization)
+        ):
+            raise ValueError(
+                "filtering output directories must not overlap the filtering log directory: "
+                f"{log_directory}"
+            )
 
         odd_keys = ("search_window", "patch_size", "coherence_window")
         parsed_ints = {key: _integer(values, key, source) for key in odd_keys}

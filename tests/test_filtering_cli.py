@@ -71,6 +71,21 @@ class FilteringCliTests(unittest.TestCase):
             self.assertFalse((root / "S1/ASCENDING_128/ANALYSIS/FILTERING").exists())
             self.assertFalse((root / "S1/ASCENDING_128/LOG").exists())
 
+    def test_selected_case_ignores_invalid_unselected_case(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = self._config(root)
+            config.write_text(
+                config.read_text(encoding="utf-8")
+                + "\n[case:broken]\nmethod = unsupported\n",
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                code = main(["--config", str(config), "--case", "bm3d", "--dry-run"])
+            self.assertEqual(code, 0)
+            self.assertEqual(json.loads(stdout.getvalue())["case"], "bm3d")
+
     def test_omitted_case_executes_all_configured_cases(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = self._config(Path(directory))
