@@ -35,7 +35,10 @@ def main(arguments: Sequence[str] | None = None) -> int:
     options = _parser().parse_args(arguments)
     try:
         case = select_gamma_interferogram_case(
-            load_gamma_interferogram_config(options.config), options.case
+            load_gamma_interferogram_config(
+                options.config, case_name=options.case
+            ),
+            options.case,
         )
         plan = build_gamma_interferogram_plan(case)
     except (FileNotFoundError, OSError, TypeError, ValueError) as error:
@@ -50,9 +53,19 @@ def main(arguments: Sequence[str] | None = None) -> int:
                     "case_id": case.case_id,
                     "looks": {"azimuth": case.azimuth_looks, "range": case.range_looks},
                     "output_dir": str(case.output_dir),
+                    "visualization_dir": str(case.visualization_dir),
+                    "geocoding_config": str(case.geocoding.config_path),
+                    "geocoding_output_dir": str(case.geocoding.output_dir),
+                    "map_dem_segment": str(
+                        case.geocoding.output_dir / "demcrop.dem"
+                    ),
+                    "map_dem_parameter": str(
+                        case.geocoding.output_dir / "demcrop.dem_par"
+                    ),
+                    "quicklook_output_dir": str(case.visualization_dir),
+                    "dem": str(case.geocoding.dem),
                     "pair_count": len(plan.pairs),
                     "polarization": case.polarization,
-                    "radar_height": str(case.radar_height),
                     "reference_date": plan.stack.reference_date,
                     "registered_stack": str(case.registered_stack),
                     "resolved_filter_flags": {

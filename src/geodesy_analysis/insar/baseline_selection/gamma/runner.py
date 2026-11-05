@@ -10,6 +10,7 @@ from pathlib import Path
 
 from geodesy_analysis.common.command import SubprocessCommandRunner
 from geodesy_analysis.common.progress import emit_progress
+from geodesy_analysis.common.reuse import ReuseState, classify_analysis_output
 from geodesy_analysis.io import atomic_output_directory
 
 from .models import GammaBaselinePlan
@@ -33,30 +34,6 @@ class BaselineRunSummary:
 
 def _event(sink: Callable[[str], None], **values: object) -> None:
     sink(emit_progress(task=_TASK, **values))
-
-
-def _published_asset(output: Path, value: object, label: str) -> Path:
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"baseline manifest {label} path is required")
-    relative = Path(value)
-    if relative.is_absolute() or ".." in relative.parts:
-        raise ValueError(f"baseline manifest {label} path is unsafe")
-    target = (output / relative).resolve()
-    try:
-        target.relative_to(output.resolve())
-    except ValueError as error:
-        raise ValueError(f"baseline manifest {label} leaves output directory") from error
-    if not target.is_file() or target.stat().st_size == 0:
-        raise ValueError(f"complete baseline output is missing {label}: {target}")
-    return target
-
-
-def _nonempty_lines(path: Path) -> tuple[str, ...]:
-    return tuple(
-        line.strip()
-        for line in path.read_text(encoding="utf-8", errors="replace").splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
-    )
 
 
 def _project_path(plan: GammaBaselinePlan, path: Path) -> str:
@@ -100,86 +77,6 @@ def _preserve_failed_logs(active: Path) -> Path:
     return failed
 
 
-def _read_existing(plan: GammaBaselinePlan, signature: str) -> BaselineRunSummary | None:
-    output = plan.case.output_dir
-    if not output.exists():
-        return None
-    manifest_path = output / "baseline_manifest.json"
-    provenance_path = output / "provenance.json"
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
-        if not isinstance(manifest, dict) or not isinstance(provenance, dict):
-            raise ValueError("baseline manifest and provenance must be JSON objects")
-        if provenance.get("input_signature") != signature:
-            raise FileExistsError(
-                f"baseline output was produced from different inputs: {output}"
-            )
-        schema_version = manifest.get("schema_version")
-        if schema_version not in {1, 2} or manifest.get("status") != "complete":
-            raise ValueError("baseline manifest is not a supported complete schema")
-        if schema_version == 2:
-            registered_stack_project_path = _project_path(
-                plan, plan.case.registered_stack
-            )
-            if manifest.get("case_id") != plan.case.case_id:
-                raise ValueError("baseline manifest case identity is inconsistent")
-            if manifest.get("backend") != {"name": "gamma"}:
-                raise ValueError("baseline manifest backend is inconsistent")
-            if (
-                manifest.get("registered_stack_project_path")
-                != registered_stack_project_path
-            ):
-                raise ValueError("baseline manifest registered stack is inconsistent")
-            if provenance.get("schema_version") != 2:
-                raise ValueError("baseline provenance schema is inconsistent")
-            if provenance.get("case_id") != plan.case.case_id:
-                raise ValueError("baseline provenance case identity is inconsistent")
-            if provenance.get("backend") != {"name": "gamma"}:
-                raise ValueError("baseline provenance backend is inconsistent")
-            if (
-                provenance.get("registered_stack_project_path")
-                != registered_stack_project_path
-            ):
-                raise ValueError("baseline provenance registered stack is inconsistent")
-        if manifest.get("stack_digest") != plan.stack.source_digest:
-            raise ValueError("baseline manifest stack digest is inconsistent")
-        if manifest.get("reference_date") != plan.stack.reference_date:
-            raise ValueError("baseline manifest reference date is inconsistent")
-        if manifest.get("polarization") != plan.case.polarization:
-            raise ValueError("baseline manifest polarization is inconsistent")
-        if manifest.get("network_type") != plan.case.network_type:
-            raise ValueError("baseline manifest network type is inconsistent")
-        network = _published_asset(output, manifest.get("network_path"), "network")
-        image_pairs = _published_asset(
-            output, manifest.get("image_pairs_path"), "image pairs"
-        )
-        _published_asset(output, manifest.get("provenance_path"), "provenance")
-        images = _published_asset(output, "images", "images")
-        pair_count = manifest.get("pair_count")
-        if not isinstance(pair_count, int) or isinstance(pair_count, bool) or pair_count <= 0:
-            raise ValueError("baseline manifest pair_count must be a positive integer")
-        if len(_nonempty_lines(network)) != pair_count:
-            raise ValueError("baseline manifest pair_count does not match network")
-        if len(_nonempty_lines(image_pairs)) != pair_count:
-            raise ValueError("baseline manifest pair_count does not match image pairs")
-        if tuple(
-            "-".join(line.split()[:2]) for line in _nonempty_lines(network)
-        ) != _nonempty_lines(image_pairs):
-            raise ValueError("baseline network and image-pair inventories disagree")
-        if _nonempty_lines(images) != plan.stack.dates:
-            raise ValueError("baseline images inventory is inconsistent")
-        return BaselineRunSummary(
-            status="skipped",
-            pair_count=pair_count,
-            output_dir=output,
-        )
-    except FileExistsError:
-        raise
-    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
-        raise FileExistsError(f"baseline output is incomplete or invalid: {output}") from error
-
-
 def run_gamma_baseline(
     plan: GammaBaselinePlan,
     *,
@@ -191,19 +88,63 @@ def run_gamma_baseline(
     if not isinstance(plan, GammaBaselinePlan):
         raise TypeError("plan must be GammaBaselinePlan")
     signature = baseline_input_signature(plan)
-    existing = _read_existing(plan, signature)
-    if existing is not None:
+    reuse = classify_analysis_output(
+        plan.case.output_dir, "baseline_manifest.json", signature
+    )
+    if reuse.state is ReuseState.COMPLETE:
+        manifest = reuse.manifest or {}
+        expected_identity = {
+            "backend": {"name": "gamma"},
+            "case_id": plan.case.case_id,
+            "network_type": plan.case.network_type,
+            "image_pairs_path": f"image_pairs_{plan.case.network_type}",
+            "network_path": f"baseline_select_{plan.case.network_type}",
+            "polarization": plan.case.polarization,
+            "registered_stack_project_path": _project_path(
+                plan, plan.case.registered_stack
+            ),
+            "stack_digest": plan.stack.source_digest,
+        }
+        inconsistent = [
+            key
+            for key, value in expected_identity.items()
+            if manifest.get(key) != value
+        ]
+        network = plan.case.output_dir / f"baseline_select_{plan.case.network_type}"
+        pair_count = sum(
+            1
+            for line in network.read_text(
+                encoding="utf-8", errors="replace"
+            ).splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        )
+        if manifest.get("pair_count") != pair_count:
+            inconsistent.append("pair_count")
+        if inconsistent:
+            raise RuntimeError(
+                "baseline manifest identity is inconsistent: "
+                + ", ".join(inconsistent)
+                + f". Existing science was not modified: {plan.case.output_dir}"
+            )
         _event(
             progress_sink,
             event="batch_finished",
             status="skipped",
-            index=2,
             total=2,
-            stage="publish",
+            stage="reuse",
         )
-        return existing
-
-    log_dir = plan.case.case_root / "LOG/ANALYSIS/GAMMA/BASELINE"
+        return BaselineRunSummary(
+            status="skipped",
+            pair_count=int(manifest.get("pair_count", 0)),
+            output_dir=plan.case.output_dir,
+        )
+    if reuse.state is not ReuseState.ABSENT:
+        raise RuntimeError(reuse.guidance)
+    log_dir = (
+        plan.case.paths.processing_root / "LOG/ANALYSIS/BASELINE"
+        if plan.case.paths.processing_root is not None
+        else plan.case.case_root / "LOG/ANALYSIS/BASELINE_SELECTION/GAMMA"
+    )
     _begin_logs(log_dir)
     stdout_log = log_dir / "base_calc.stdout.log"
     stderr_log = log_dir / "base_calc.stderr.log"
@@ -293,6 +234,14 @@ def run_gamma_baseline(
                 "provenance_path": "provenance.json",
                 "reference_date": plan.stack.reference_date,
                 "registered_stack_project_path": registered_stack_project_path,
+                "input_signature": signature,
+                "required_products": [
+                    "images",
+                    image_pairs.name,
+                    network.name,
+                    "provenance.json",
+                ],
+                "figures": [],
                 "schema_version": 2,
                 "stack_digest": plan.stack.source_digest,
                 "status": "complete",

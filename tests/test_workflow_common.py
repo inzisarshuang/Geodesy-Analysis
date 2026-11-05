@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from geodesy_analysis.common.command import (
     CommandExecutionError,
@@ -13,7 +14,11 @@ from geodesy_analysis.common.command import (
 )
 from geodesy_analysis.common.paths import validate_within_root
 from geodesy_analysis.common.progress import ConsoleProgress, PROGRESS_PREFIX, emit_progress
-from geodesy_analysis.io import atomic_output_directory
+from geodesy_analysis.io import (
+    atomic_output_directory,
+    atomic_replace_output_directory,
+    atomic_replace_output_directories,
+)
 
 
 class WorkflowCommonTests(unittest.TestCase):
@@ -93,6 +98,56 @@ class WorkflowCommonTests(unittest.TestCase):
             with self.assertRaisesRegex(FileExistsError, "already exists"):
                 with atomic_output_directory(destination):
                     pass
+
+    def test_atomic_replace_directory_replaces_only_after_success(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "BASELINE"
+            destination.mkdir()
+            (destination / "old").write_text("old", encoding="utf-8")
+
+            with self.assertRaisesRegex(RuntimeError, "stop"):
+                with atomic_replace_output_directory(destination) as staging:
+                    (staging / "partial").write_text("partial", encoding="utf-8")
+                    raise RuntimeError("stop")
+            self.assertEqual(
+                (destination / "old").read_text(encoding="utf-8"), "old"
+            )
+            self.assertFalse((destination / "partial").exists())
+
+            with atomic_replace_output_directory(destination) as staging:
+                (staging / "new").write_text("new", encoding="utf-8")
+            self.assertFalse((destination / "old").exists())
+            self.assertEqual(
+                (destination / "new").read_text(encoding="utf-8"), "new"
+            )
+
+    def test_atomic_replace_directories_rolls_back_partial_publication(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = root / "SCIENCE"
+            second = root / "VISUALIZATION"
+            for output, content in ((first, "old science"), (second, "old view")):
+                output.mkdir()
+                (output / "old").write_text(content, encoding="utf-8")
+            real_replace = __import__("os").replace
+
+            def fail_second_publish(source, destination):
+                if Path(destination) == second and str(source).endswith(".stage"):
+                    raise OSError("synthetic second publication failure")
+                return real_replace(source, destination)
+
+            with patch(
+                "geodesy_analysis.io.os.replace", side_effect=fail_second_publish
+            ):
+                with self.assertRaisesRegex(OSError, "second publication failure"):
+                    with atomic_replace_output_directories(first, second) as staging:
+                        (staging[0] / "new").write_text("new science", encoding="utf-8")
+                        (staging[1] / "new").write_text("new view", encoding="utf-8")
+
+            self.assertEqual((first / "old").read_text(encoding="utf-8"), "old science")
+            self.assertEqual((second / "old").read_text(encoding="utf-8"), "old view")
+            self.assertFalse((first / "new").exists())
+            self.assertFalse((second / "new").exists())
 
 
 if __name__ == "__main__":

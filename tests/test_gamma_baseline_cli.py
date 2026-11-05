@@ -64,7 +64,7 @@ polarization = VV
 network_type = SBAS
 max_perpendicular_baseline = 300
 max_temporal_baseline = 40
-output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE
+output_dir = S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA
 """,
             encoding="utf-8",
         )
@@ -99,11 +99,34 @@ output_dir = S1/ASCENDING_128/ANALYSIS/GAMMA/BASELINE
         self.assertEqual(code, 2)
         self.assertIn("ERROR:", error.getvalue())
 
+    def test_dry_run_validates_only_selected_case(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = self._config(root)
+            with config.open("a", encoding="utf-8") as stream:
+                stream.write(
+                    """
+[case:broken]
+case_root = S1/ASCENDING_128
+registered_stack = missing.json
+polarization = VV
+network_type = invalid
+output_dir = S1/ASCENDING_128/ANALYSIS/BASELINE_SELECTION/GAMMA
+"""
+                )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                code = main(
+                    ["--config", str(config), "--case", "ascending", "--dry-run"]
+                )
+            self.assertEqual(code, 0)
+            self.assertEqual(json.loads(output.getvalue())["case"], "ascending")
+
     def test_packaging_and_example_cfg_expose_documented_entry(self) -> None:
         repository = Path(__file__).resolve().parents[1]
         project = (repository / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn("geodesy-analysis-gamma-baseline", project)
-        example = (repository / "config_examples/gamma_baseline.cfg").read_text(
+        example = (repository / "config_examples/analysis/gamma_baseline.cfg").read_text(
             encoding="utf-8"
         )
         for required in (

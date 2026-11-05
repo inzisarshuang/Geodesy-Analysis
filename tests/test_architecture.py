@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -28,11 +29,15 @@ class ArchitectureTests(unittest.TestCase):
             text = path.read_text(encoding="utf-8")
             with self.subTest(path=path):
                 self.assertNotIn("matplotlib", text.lower())
+                self.assertIsNone(
+                    re.search(r"^\s*(?:from|import)\s+pygmt\b", text, re.MULTILINE)
+                )
                 self.assertNotIn("geodesy_visualization", text)
 
         project = (repository / "pyproject.toml").read_text(encoding="utf-8")
         self.assertNotIn("geodesy-analysis-baseline-plot", project)
         self.assertNotIn("matplotlib", project.lower())
+        self.assertNotIn("pygmt", project.lower())
         self.assertNotIn("plot =", project)
         self.assertFalse(
             (source_root / "geodesy_analysis/insar/baseline_selection/common/plot_cli.py").exists()
@@ -42,10 +47,23 @@ class ArchitectureTests(unittest.TestCase):
         )
         self.assertFalse((repository / "config_examples/baseline_plot.cfg").exists())
 
+        public_docs = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (
+                repository / "README.md",
+                repository / "docs/architecture.md",
+                repository / "docs/workflows/gamma_insar.md",
+            )
+        )
+        self.assertIn("GAMMA DISP", public_docs)
+        self.assertIn("Geodesy-Visualization", public_docs)
+        self.assertNotIn("Analysis 不生成图像", public_docs)
+        self.assertNotIn("Analysis 不创建快视图", public_docs)
+
     def test_public_contract_has_no_legacy_analysis_layout(self) -> None:
         repository = Path(__file__).resolve().parents[1]
         paths = [repository / "README.md"]
-        paths.extend((repository / "config_examples").glob("*.cfg"))
+        paths.extend((repository / "config_examples").rglob("*.cfg"))
         paths.extend(
             path
             for path in (repository / "docs").rglob("*.md")
@@ -63,6 +81,33 @@ class ArchitectureTests(unittest.TestCase):
             for pattern in forbidden:
                 with self.subTest(path=path, pattern=pattern.pattern):
                     self.assertIsNone(pattern.search(text))
+
+    def test_config_examples_belong_to_the_analysis_stage(self) -> None:
+        """Catch flat or incorrectly packaged public Analysis CFG examples."""
+
+        repository = Path(__file__).resolve().parents[1]
+        example_root = repository / "config_examples"
+        self.assertEqual(tuple(example_root.glob("*.cfg")), ())
+        self.assertEqual(
+            {path.name for path in (example_root / "analysis").glob("*.cfg")},
+            {
+                "gamma_baseline.cfg",
+                "gamma_geocoding.cfg",
+                "gamma_interferogram.cfg",
+                "gamma_mcf_unwrapping.cfg",
+                "gamma_quad_detrending.cfg",
+                "insar_filtering.cfg",
+            },
+        )
+        metadata = tomllib.loads(
+            (repository / "pyproject.toml").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            metadata["tool"]["setuptools"]["data-files"][
+                "share/geodesy-analysis/config_examples/analysis"
+            ],
+            ["config_examples/analysis/*.cfg"],
+        )
 
 
 if __name__ == "__main__":

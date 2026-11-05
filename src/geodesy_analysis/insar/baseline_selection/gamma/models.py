@@ -21,6 +21,7 @@ class GammaBaselineCase:
     max_perpendicular_baseline: float
     max_temporal_baseline: float
     output_dir: Path
+    figure_dir: Path | None = None
 
     @property
     def name(self) -> str:

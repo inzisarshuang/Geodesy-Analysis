@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 _CASE_COMPONENT = re.compile(r"[A-Z0-9_]+")
+_METHOD_COMPONENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,7 @@ class AnalysisCasePaths:
     case_id: str
     project_root: Path
     case_root: Path
+    processing_root: Path | None = None
 
 
 def _require_within(path: Path, root: Path, label: str, root_label: str) -> Path:
@@ -45,7 +47,10 @@ def _resolve_declared_path(project_root: Path, value: str | Path, label: str) ->
 
 
 def bind_analysis_case(
-    project_root: str | Path, label: str, case_root: str | Path
+    project_root: str | Path,
+    label: str,
+    case_root: str | Path,
+    processing_root: str | Path | None = None,
 ) -> AnalysisCasePaths:
     """Bind a formal two-component case without creating filesystem content."""
 
@@ -69,11 +74,34 @@ def bind_analysis_case(
     resolved_case = _require_within(
         project.joinpath(*components), project, "case root", "project root"
     )
+    resolved_processing: Path | None = None
+    if processing_root is not None:
+        raw_processing = str(processing_root)
+        processing_path = Path(raw_processing)
+        processing_components = raw_processing.split("/")
+        if (
+            processing_path.is_absolute()
+            or "\\" in raw_processing
+            or processing_components[:2] != components
+            or len(processing_components) != 3
+            or _METHOD_COMPONENT.fullmatch(processing_components[2]) is None
+        ):
+            raise ValueError(
+                "processing_root must be a project-relative "
+                "<sensor>/<case>/<method> path inside the declared case"
+            )
+        resolved_processing = _require_within(
+            project.joinpath(*processing_components),
+            resolved_case,
+            "processing_root",
+            "case root",
+        )
     return AnalysisCasePaths(
         label=label,
         case_id=case_id,
         project_root=project,
         case_root=resolved_case,
+        processing_root=resolved_processing,
     )
 
 
@@ -120,10 +148,106 @@ def resolve_case_output(paths: AnalysisCasePaths, value: str | Path) -> Path:
     )
 
 
+def resolve_project_output(paths: AnalysisCasePaths, value: str | Path) -> Path:
+    """Resolve a current or future output anywhere inside the project."""
+
+    return _require_within(
+        _resolve_declared_path(paths.project_root, value, "project output"),
+        paths.project_root,
+        "project output",
+        "project root",
+    )
+
+
+def resolve_output_path(paths: AnalysisCasePaths, value: str | Path) -> Path:
+    """Resolve an output path, accepting absolute paths outside the project."""
+
+    return resolve_project_or_absolute_path(paths, value, "output")
+
+
+def resolve_project_or_absolute_path(
+    paths: AnalysisCasePaths, value: str | Path, label: str
+) -> Path:
+    """Resolve a project-relative path or an absolute artifact path anywhere."""
+
+    raw = str(value)
+    candidate = Path(raw).expanduser()
+    if candidate.is_absolute():
+        return candidate.resolve()
+    return _require_within(
+        _resolve_declared_path(paths.project_root, value, label),
+        paths.project_root,
+        label,
+        "project root",
+    )
+
+
+def _overlaps(first: Path, second: Path) -> bool:
+    """Return whether either resolved path contains the other."""
+
+    left = first.resolve()
+    right = second.resolve()
+    return left == right or left in right.parents or right in left.parents
+
+
+def resolve_case_visualization_output(
+    paths: AnalysisCasePaths,
+    value: str | Path,
+    *,
+    scientific_output: Path,
+    inputs: tuple[Path, ...],
+) -> Path:
+    """Resolve a case-local display output disjoint from scientific data."""
+
+    resolved = _require_within(
+        _resolve_declared_path(paths.project_root, value, "visualization output"),
+        paths.case_root,
+        "visualization output",
+        "case root",
+    )
+    protected = (Path(scientific_output), *(Path(path) for path in inputs))
+    for path in protected:
+        if _overlaps(resolved, path):
+            raise ValueError(
+                "visualization output must not overlap scientific output or input: "
+                f"{resolved} overlaps {path.resolve()}"
+            )
+    return resolved
+
+
+def resolve_project_visualization_output(
+    paths: AnalysisCasePaths,
+    value: str | Path,
+    *,
+    scientific_output: Path,
+    inputs: tuple[Path, ...],
+) -> Path:
+    """Resolve project-wide visualization output disjoint from science and inputs."""
+
+    resolved = _require_within(
+        _resolve_declared_path(paths.project_root, value, "visualization output"),
+        paths.project_root,
+        "visualization output",
+        "project root",
+    )
+    for protected in (Path(scientific_output), *(Path(path) for path in inputs)):
+        if _overlaps(resolved, protected):
+            raise ValueError(
+                "visualization output must not overlap scientific output or input: "
+                f"{resolved} overlaps {protected.resolve()}"
+            )
+    return resolved
+
+
 __all__ = [
     "AnalysisCasePaths",
     "bind_analysis_case",
     "resolve_case_input",
     "resolve_case_output",
+    "resolve_case_visualization_output",
+    "resolve_output_path",
+    "resolve_project_or_absolute_path",
     "resolve_project_input",
+    "resolve_project_output",
+    "resolve_project_visualization_output",
 ]

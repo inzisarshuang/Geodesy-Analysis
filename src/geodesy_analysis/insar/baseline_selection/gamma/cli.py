@@ -11,7 +11,7 @@ from pathlib import Path
 
 from geodesy_analysis.common.progress import ConsoleProgress
 
-from .config import load_gamma_baseline_config, select_gamma_baseline_case
+from .config import load_gamma_baseline_config
 from .plan import build_gamma_baseline_plan
 from .runner import run_gamma_baseline
 
@@ -34,9 +34,15 @@ def main(arguments: Sequence[str] | None = None) -> int:
 
     options = _parser().parse_args(arguments)
     try:
-        case = select_gamma_baseline_case(
-            load_gamma_baseline_config(options.config), options.case
+        configured = load_gamma_baseline_config(
+            options.config, case_name=options.case
         )
+        if options.case is None:
+            if len(configured) != 1:
+                raise ValueError("--case is required when configuration has multiple cases")
+            case = configured[0]
+        else:
+            case = configured[0]
         plan = build_gamma_baseline_plan(case)
     except (FileNotFoundError, OSError, TypeError, ValueError) as error:
         print(f"ERROR: {error}", file=sys.stderr)

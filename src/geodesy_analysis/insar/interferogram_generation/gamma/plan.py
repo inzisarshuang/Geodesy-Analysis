@@ -187,14 +187,14 @@ def build_gamma_interferogram_plan(
     if baseline.polarization != case.polarization:
         raise ValueError("baseline manifest polarization does not match requested polarization")
 
-    try:
-        radar_height = resolve_case_input(case.paths, case.radar_height)
-    except FileNotFoundError as error:
-        raise FileNotFoundError(f"radar height not found: {case.radar_height}") from error
-    if not radar_height.is_file():
-        raise FileNotFoundError(f"radar height not found: {radar_height}")
-    if radar_height.stat().st_size == 0:
-        raise ValueError(f"radar height is empty: {radar_height}")
+    for label, path in (
+        ("geocoding DEM", case.geocoding.dem),
+        ("geocoding DEM parameter", case.geocoding.dem_par),
+    ):
+        if not path.is_file():
+            raise FileNotFoundError(f"{label} not found: {path}")
+        if path.stat().st_size == 0:
+            raise ValueError(f"{label} is empty: {path}")
 
     pairs = _network_pairs(baseline.network_path, stack.dates)
     if len(pairs) != baseline.pair_count:
