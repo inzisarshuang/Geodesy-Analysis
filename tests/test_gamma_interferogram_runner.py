@@ -66,9 +66,12 @@ class _FakeGamma:
         elif program == "geocoding.py":
             output_dir = Path(argv[argv.index("--out_dir") + 1])
             output_dir.mkdir(parents=True, exist_ok=True)
+            geocoded_root = f"{Path(argv[3]).stem}.{argv[5]}"
             (output_dir / f"{argv[5]}.wgs84.hgt").write_bytes(
                 b"\0" * self.geocoding_height_size
             )
+            (output_dir / f"{geocoded_root}.lt_fine").write_bytes(b"lookup")
+            (output_dir / f"{geocoded_root}.mli").write_bytes(b"geocoded-mli")
             (output_dir / "demcrop.dem").write_bytes(
                 b"\0" * self.geocoding_dem_size
             )
@@ -329,6 +332,24 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
                 manifest["map_dem_segment_parameter_project_path"],
                 "S1/ASCENDING_128/ANALYSIS/GEO/GAMMA/demcrop.dem_par",
             )
+            self.assertEqual(
+                manifest["lookup_table_project_path"],
+                "S1/ASCENDING_128/ANALYSIS/GEO/GAMMA/"
+                "cop30.20231226.VV.lt_fine",
+            )
+            self.assertEqual(
+                manifest["geocoded_reference_mli_project_path"],
+                "S1/ASCENDING_128/ANALYSIS/GEO/GAMMA/"
+                "cop30.20231226.VV.mli",
+            )
+            self.assertIn(
+                manifest["lookup_table_project_path"],
+                manifest["required_external_products"],
+            )
+            self.assertIn(
+                manifest["geocoded_reference_mli_project_path"],
+                manifest["required_external_products"],
+            )
             self.assertEqual(manifest["map_grid"], {"lines": 5, "width": 7})
             self.assertTrue(
                 (
@@ -418,6 +439,14 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
             self.assertEqual(provenance["case_id"], "S1/ASCENDING_128")
             self.assertEqual(
                 provenance["geocoding"]["dem_segment_root"], "demcrop"
+            )
+            self.assertEqual(
+                provenance["geocoding"]["lookup_table_project_path"],
+                manifest["lookup_table_project_path"],
+            )
+            self.assertEqual(
+                provenance["geocoding"]["geocoded_reference_mli_project_path"],
+                manifest["geocoded_reference_mli_project_path"],
             )
             self.assertNotIn(str(root), json.dumps(manifest, sort_keys=True))
             self.assertNotIn(str(root), json.dumps(provenance, sort_keys=True))

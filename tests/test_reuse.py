@@ -60,6 +60,75 @@ class AnalysisReuseTests(unittest.TestCase):
                 ReuseState.CORRUPT,
             )
 
+    def test_optional_project_relative_external_products_are_validated(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA"
+            output.mkdir(parents=True)
+            (output / "science.bin").write_bytes(b"science")
+            external = root / "ANALYSIS/GEO/GAMMA/reference.lt_fine"
+            external.parent.mkdir(parents=True)
+            external.write_bytes(b"lookup")
+            (output / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "status": "complete",
+                        "input_signature": "sig",
+                        "required_products": ["science.bin"],
+                        "required_external_products": [
+                            "ANALYSIS/GEO/GAMMA/reference.lt_fine"
+                        ],
+                        "figures": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                classify_analysis_output(
+                    output, "manifest.json", "sig", project_root=root
+                ).state,
+                ReuseState.COMPLETE,
+            )
+            external.unlink()
+            self.assertEqual(
+                classify_analysis_output(
+                    output, "manifest.json", "sig", project_root=root
+                ).state,
+                ReuseState.INCOMPLETE,
+            )
+
+    def test_external_products_require_project_root_and_cannot_escape_it(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "output"
+            output.mkdir()
+            (output / "science.bin").write_bytes(b"science")
+            manifest = output / "manifest.json"
+            payload = {
+                "schema_version": 2,
+                "status": "complete",
+                "input_signature": "sig",
+                "required_products": ["science.bin"],
+                "required_external_products": ["../outside.bin"],
+                "figures": [],
+            }
+            manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+            self.assertEqual(
+                classify_analysis_output(
+                    output, "manifest.json", "sig", project_root=root
+                ).state,
+                ReuseState.CORRUPT,
+            )
+            payload["required_external_products"] = ["inside.bin"]
+            manifest.write_text(json.dumps(payload), encoding="utf-8")
+            self.assertEqual(
+                classify_analysis_output(output, "manifest.json", "sig").state,
+                ReuseState.CORRUPT,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -47,6 +47,8 @@ def classify_analysis_output(
     output_dir: str | Path,
     manifest_name: str,
     expected_signature: str,
+    *,
+    project_root: str | Path | None = None,
 ) -> ReuseDecision:
     """Classify science and figure completeness without mutating either tree."""
 
@@ -111,6 +113,53 @@ def classify_analysis_output(
                 ReuseState.INCOMPLETE,
                 output,
                 f"required science product is missing or empty: {value}",
+                payload,
+            )
+    external_products = payload.get("required_external_products", [])
+    if not isinstance(external_products, list):
+        return ReuseDecision(
+            ReuseState.CORRUPT,
+            output,
+            "external product inventory is invalid",
+            payload,
+        )
+    root = (
+        Path(project_root).expanduser().resolve()
+        if project_root is not None
+        else None
+    )
+    for value in external_products:
+        if not isinstance(value, str) or not value:
+            return ReuseDecision(
+                ReuseState.CORRUPT,
+                output,
+                "external product path is invalid",
+                payload,
+            )
+        declared = Path(value).expanduser()
+        if declared.is_absolute():
+            product = declared
+        else:
+            if root is None:
+                return ReuseDecision(
+                    ReuseState.CORRUPT,
+                    output,
+                    "project_root is required for relative external products",
+                    payload,
+                )
+            if ".." in declared.parts:
+                return ReuseDecision(
+                    ReuseState.CORRUPT,
+                    output,
+                    "external product escapes project root",
+                    payload,
+                )
+            product = root / declared
+        if product.is_symlink() or not product.is_file() or product.stat().st_size < 1:
+            return ReuseDecision(
+                ReuseState.INCOMPLETE,
+                output,
+                f"required external product is missing or empty: {value}",
                 payload,
             )
     figures = payload.get("figures", [])

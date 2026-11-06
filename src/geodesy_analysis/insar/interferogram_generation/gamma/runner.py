@@ -27,6 +27,7 @@ from .models import GammaInterferogramPlan, InterferogramPair
 from .publication import (
     ensure_nonempty,
     gamma_parameter,
+    geocoding_asset_names,
     interferogram_input_signature,
 )
 
@@ -381,11 +382,14 @@ def _geocode_reference(
     progress_sink: Callable[[str], None],
     index: int,
     total: int,
-) -> Path:
+) -> tuple[Path, Path, Path]:
     reference_date = plan.stack.reference_date
     reference_mli, reference_parameter = mli_assets[reference_date]
     root_name = f"{reference_date}.{plan.case.polarization}"
     radar_height = destination / f"{root_name}.wgs84.hgt"
+    lookup_name, geocoded_mli_name = geocoding_asset_names(plan)
+    lookup_table = destination / lookup_name
+    geocoded_reference_mli = destination / geocoded_mli_name
     quality = destination / f"{root_name}.geocoding_quality"
     map_dem = destination / "demcrop.dem"
     map_dem_parameter = destination / "demcrop.dem_par"
@@ -432,6 +436,8 @@ def _geocode_reference(
         log_stem=f"geocoding_{reference_date}",
         expected=(
             (radar_height, "geocoded WGS84 radar height"),
+            (lookup_table, "fine geocoding lookup table"),
+            (geocoded_reference_mli, "geocoded reference MLI"),
             (quality, "geocoding quality summary"),
             (map_dem, "cropped map-grid DEM"),
             (map_dem_parameter, "cropped map-grid DEM parameter"),
@@ -462,7 +468,7 @@ def _geocode_reference(
         total=total,
         stage="geocoding",
     )
-    return radar_height
+    return radar_height, lookup_table, geocoded_reference_mli
 
 
 def _quicklook_metadata(
@@ -667,10 +673,14 @@ def run_gamma_interferograms(
         else plan.case.case_root / "LOG/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA"
     )
     reuse = classify_analysis_output(
-        plan.case.output_dir, "interferogram_manifest.json", signature
+        plan.case.output_dir,
+        "interferogram_manifest.json",
+        signature,
+        project_root=plan.case.project_root,
     )
     if reuse.science_reusable:
         manifest = reuse.manifest or {}
+        lookup_name, geocoded_mli_name = geocoding_asset_names(plan)
         expected_identity = {
             "backend": {"name": "gamma"},
             "baseline_manifest_project_path": _project_path(
@@ -678,6 +688,14 @@ def run_gamma_interferograms(
             ),
             "case_id": plan.case.case_id,
             "polarization": plan.case.polarization,
+            "lookup_table_project_path": _project_path(
+                plan,
+                plan.case.geocoding.output_dir / lookup_name,
+            ),
+            "geocoded_reference_mli_project_path": _project_path(
+                plan,
+                plan.case.geocoding.output_dir / geocoded_mli_name,
+            ),
             "radar_height_project_path": _project_path(
                 plan,
                 plan.case.geocoding.output_dir
@@ -803,7 +821,7 @@ def run_gamma_interferograms(
                 progress_sink=progress_sink,
                 total=total,
             )
-            radar_height = _geocode_reference(
+            radar_height, lookup_table, geocoded_reference_mli = _geocode_reference(
                 plan,
                 mli_assets=mli_assets,
                 width=width,
@@ -869,6 +887,18 @@ def run_gamma_interferograms(
                 plan,
                 plan.case.geocoding.output_dir / radar_height.name,
             )
+            published_lookup_table = (
+                plan.case.geocoding.output_dir / lookup_table.name
+            )
+            published_geocoded_reference_mli = (
+                plan.case.geocoding.output_dir / geocoded_reference_mli.name
+            )
+            lookup_table_project_path = _project_path(
+                plan, published_lookup_table
+            )
+            geocoded_reference_mli_project_path = _project_path(
+                plan, published_geocoded_reference_mli
+            )
             map_dem = geocoding_staging / "demcrop.dem"
             map_dem_parameter = geocoding_staging / "demcrop.dem_par"
             map_dem_width = gamma_parameter(map_dem_parameter, "width")
@@ -899,6 +929,10 @@ def run_gamma_interferograms(
                     ),
                     "dem_segment_path": _project_path(plan, published_map_dem),
                     "dem_segment_root": "demcrop",
+                    "geocoded_reference_mli_project_path": (
+                        geocoded_reference_mli_project_path
+                    ),
+                    "lookup_table_project_path": lookup_table_project_path,
                     "output_dir": geocoding_output_project_path,
                     "polynomial_parameters": (
                         plan.case.geocoding.polynomial_parameters
@@ -927,6 +961,10 @@ def run_gamma_interferograms(
                     "range": plan.spectral_filter_range,
                 },
                 "geocoding_output_dir_project_path": geocoding_output_project_path,
+                "geocoded_reference_mli_project_path": (
+                    geocoded_reference_mli_project_path
+                ),
+                "lookup_table_project_path": lookup_table_project_path,
                 "looks": {"azimuth": plan.case.azimuth_looks, "range": plan.case.range_looks},
                 "map_dem_segment_project_path": _project_path(
                     plan, published_map_dem
@@ -998,6 +1036,13 @@ def run_gamma_interferograms(
                     for relative in item["products"].values()
                 ],
                 "provenance.json",
+            ]
+            manifest["required_external_products"] = [
+                radar_height_project_path,
+                _project_path(plan, published_map_dem),
+                _project_path(plan, published_map_dem_parameter),
+                lookup_table_project_path,
+                geocoded_reference_mli_project_path,
             ]
             manifest["figures"] = [
                 Path(

@@ -45,6 +45,16 @@ def gamma_parameter(path: Path, key: str) -> int:
     raise ValueError(f"missing {key} in GAMMA parameter file: {source}")
 
 
+def geocoding_asset_names(plan: GammaInterferogramPlan) -> tuple[str, str]:
+    """Return deterministic lookup-table and reference-MLI output names."""
+
+    root = (
+        f"{plan.case.geocoding.dem.stem}."
+        f"{plan.stack.reference_date}.{plan.case.polarization}"
+    )
+    return f"{root}.lt_fine", f"{root}.mli"
+
+
 def interferogram_input_signature(plan: GammaInterferogramPlan) -> str:
     """Hash every scientific input and user-controlled execution parameter."""
 
@@ -97,5 +107,6 @@ def interferogram_input_signature(plan: GammaInterferogramPlan) -> str:
 __all__ = [
     "ensure_nonempty",
     "gamma_parameter",
+    "geocoding_asset_names",
     "interferogram_input_signature",
 ]
