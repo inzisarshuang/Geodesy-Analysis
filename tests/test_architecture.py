@@ -63,7 +63,7 @@ class ArchitectureTests(unittest.TestCase):
     def test_public_contract_has_no_legacy_analysis_layout(self) -> None:
         repository = Path(__file__).resolve().parents[1]
         paths = [repository / "README.md"]
-        paths.extend((repository / "config_examples").rglob("*.cfg"))
+        paths.extend((repository / "config").rglob("*.cfg"))
         paths.extend(
             path
             for path in (repository / "docs").rglob("*.md")
@@ -82,20 +82,24 @@ class ArchitectureTests(unittest.TestCase):
                 with self.subTest(path=path, pattern=pattern.pattern):
                     self.assertIsNone(pattern.search(text))
 
-    def test_config_examples_belong_to_the_analysis_stage(self) -> None:
-        """Catch flat or incorrectly packaged public Analysis CFG examples."""
+    def test_configs_use_the_flat_gamma_mb_method_category(self) -> None:
+        """Keep public Analysis CFGs in the approved method category."""
 
         repository = Path(__file__).resolve().parents[1]
-        example_root = repository / "config_examples"
-        self.assertEqual(tuple(example_root.glob("*.cfg")), ())
+        config_root = repository / "config"
+        self.assertFalse((repository / "config_examples").exists())
         self.assertEqual(
-            {path.name for path in (example_root / "analysis").glob("*.cfg")},
+            {path.name for path in (config_root / "GAMMA_mb").glob("*.cfg")},
             {
+                "gamma_atmosphere.cfg",
                 "gamma_baseline.cfg",
+                "gamma_dinsar.cfg",
                 "gamma_geocoding.cfg",
                 "gamma_interferogram.cfg",
                 "gamma_mcf_unwrapping.cfg",
                 "gamma_quad_detrending.cfg",
+                "gamma_sbas_mb.cfg",
+                "gamma_stacking.cfg",
                 "insar_filtering.cfg",
             },
         )
@@ -104,9 +108,9 @@ class ArchitectureTests(unittest.TestCase):
         )
         self.assertEqual(
             metadata["tool"]["setuptools"]["data-files"][
-                "share/geodesy-analysis/config_examples/analysis"
+                "share/geodesy-analysis/config/GAMMA_mb"
             ],
-            ["config_examples/analysis/*.cfg"],
+            ["config/GAMMA_mb/*.cfg"],
         )
 
 

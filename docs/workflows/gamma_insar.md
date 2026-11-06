@@ -14,17 +14,17 @@ Geodesy-Preprocessing 必须已经发布完整的 `registered_stack.json`。它�
 
 ## 2. 基线选择
 
-从 `config_examples/analysis/gamma_baseline.cfg` 复制一份到项目的 `config/analysis/`，填写
+从仓库 `config/GAMMA_mb/gamma_baseline.cfg` 复制到项目的 `config/GAMMA_mb/`，填写
 注册栈、极化、网络类型、基线阈值和结果目录。`output_dir` 可使用项目相对路径
 或任意绝对路径，但不能覆盖注册栈输入或本阶段日志。
 
 ```bash
 /home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-baseline \
-  --config /absolute/PROJECT/config/analysis/gamma_baseline.cfg \
+  --config /absolute/PROJECT/config/GAMMA_mb/gamma_baseline.cfg \
   --case main --dry-run
 
 /home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-baseline \
-  --config /absolute/PROJECT/config/analysis/gamma_baseline.cfg \
+  --config /absolute/PROJECT/config/GAMMA_mb/gamma_baseline.cfg \
   --case main
 ```
 
@@ -42,18 +42,17 @@ Geodesy-Preprocessing 必须已经发布完整的 `registered_stack.json`。它�
 
 ## 3. 干涉图生成
 
-从 `config_examples/analysis/gamma_interferogram.cfg` 和
-`config_examples/analysis/gamma_geocoding.cfg` 复制项目 CFG。`baseline_manifest` 必须
+从仓库 `config/GAMMA_mb/gamma_interferogram.cfg` 和 `gamma_geocoding.cfg` 复制项目 CFG。`baseline_manifest` 必须
 来自上一步；地理编码 CFG 提供 DEM 和参数文件。干涉阶段使用当前 `range_looks` /
 `azimuth_looks` 生成参考 MLI，再按相同网格重新地理编码，不再依赖 PRE 阶段的旧 `radar_height`。
 
 ```bash
 /home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-interferogram \
-  --config /absolute/PROJECT/config/analysis/gamma_interferogram.cfg \
+  --config /absolute/PROJECT/config/GAMMA_mb/gamma_interferogram.cfg \
   --case main --dry-run
 
 /home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-interferogram \
-  --config /absolute/PROJECT/config/analysis/gamma_interferogram.cfg \
+  --config /absolute/PROJECT/config/GAMMA_mb/gamma_interferogram.cfg \
   --case main
 ```
 
@@ -70,17 +69,17 @@ Geodesy-Visualization 仍负责 PyGMT 地图、论文图和其他二次渲染。
 
 ## 4. 滤波
 
-复制 `config_examples/analysis/insar_filtering.cfg` 到项目 `config/analysis/`。每个 case 显式
+复制 `config/GAMMA_mb/insar_filtering.cfg` 到项目 `config/GAMMA_mb/`。每个 case 显式
 选择 `nl_insar`、`gamma_bm3d` 或 `gamma_adf`，并读取上一阶段完整的
 `interferogram_manifest.json`。未填写 `output_dir` 时自动落到
 `<processing_root>/FILTERING/<METHOD>`；填写后使用指定目录。
 
 ```bash
 /home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-filtering \
-  --config /absolute/PROJECT/config/analysis/insar_filtering.cfg --dry-run
+  --config /absolute/PROJECT/config/GAMMA_mb/insar_filtering.cfg --dry-run
 
 /home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-filtering \
-  --config /absolute/PROJECT/config/analysis/insar_filtering.cfg --case gamma_bm3d
+  --config /absolute/PROJECT/config/GAMMA_mb/insar_filtering.cfg --case gamma_bm3d
 ```
 
 指定 `--case` 时只验证并运行该 case；省略时按 CFG 顺序执行全部 case。同一方法的
@@ -99,16 +98,16 @@ pair 库存及上游来源摘要。
 
 ## 5. GAMMA MCF 解缠
 
-复制 `config_examples/analysis/gamma_mcf_unwrapping.cfg`，并显式选择一个已完成的
+复制 `config/GAMMA_mb/gamma_mcf_unwrapping.cfg`，并显式选择一个已完成的
 `filtering_manifest.json`。解缠目录固定表达方法 `GAMMA_MCF`，上游是 NL-InSAR、
 BM3D 还是 ADF 由 manifest lineage 记录，不叠加到目录层级。
 
 ```bash
 /home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-mcf \
-  --config /absolute/PROJECT/config/analysis/gamma_mcf_unwrapping.cfg --dry-run
+  --config /absolute/PROJECT/config/GAMMA_mb/gamma_mcf_unwrapping.cfg --dry-run
 
 /home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-mcf \
-  --config /absolute/PROJECT/config/analysis/gamma_mcf_unwrapping.cfg --case main
+  --config /absolute/PROJECT/config/GAMMA_mb/gamma_mcf_unwrapping.cfg --case main
 ```
 
 `reference_mode=auto` 在最终掩膜内选择平均相干性最高的有限像元；`manual` 使用
@@ -130,17 +129,17 @@ filtering manifest 保持原样，继续描述完整滤波产物。
 
 ## 6. Quad 相位去趋势
 
-复制 `config_examples/analysis/gamma_quad_detrending.cfg` 到项目配置目录，并填写
+复制 `config/GAMMA_mb/gamma_quad_detrending.cfg` 到项目配置目录，并填写
 已完成的 GAMMA MCF `unwrapping_manifest.json`。程序沿 manifest 校验 MCF 输出、
 filtered coherence 与干涉阶段的主影像 MLI 参数，不需要手工填写这些输入路径。
 
 ```bash
 /home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-quad-detrend \
-  --config /absolute/PROJECT/config/analysis/gamma_quad_detrending.cfg \
+  --config /absolute/PROJECT/config/GAMMA_mb/gamma_quad_detrending.cfg \
   --case main --dry-run
 
 /home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-quad-detrend \
-  --config /absolute/PROJECT/config/analysis/gamma_quad_detrending.cfg \
+  --config /absolute/PROJECT/config/GAMMA_mb/gamma_quad_detrending.cfg \
   --case main
 ```
 
@@ -154,7 +153,21 @@ MCF 输出与该列表同步。科学结果、掩膜和拟合数据写入
 科学相位数据。该阶段要求上游为 schema-v2 GAMMA MCF 解缠产物；尚未发布该 manifest 的
 传感器流程不能直接配置运行。
 
-## 7. 日志与重跑
+## 7. 大气改正与时序
+
+`gamma_atmosphere.cfg` 显式读取去趋势清单并按方法输出到 `ATMOSPHERE/<METHOD>/`。
+完成后可选择 `gamma_stacking.cfg`、`gamma_dinsar.cfg` 或 `gamma_sbas_mb.cfg`；三者都
+读取 `atmosphere_manifest.json`，并保留 lookup、地图 DEM、pair list、输出、快视图和
+日志目录的显式入口。`--dry-run` 只解析并校验输入，不执行真实 GAMMA 科学命令。
+
+```bash
+geodesy-analysis-gamma-atmosphere --config /absolute/PROJECT/config/GAMMA_mb/gamma_atmosphere.cfg --case main --dry-run
+geodesy-analysis-gamma-stacking --config /absolute/PROJECT/config/GAMMA_mb/gamma_stacking.cfg --case main --dry-run
+geodesy-analysis-gamma-dinsar --config /absolute/PROJECT/config/GAMMA_mb/gamma_dinsar.cfg --case main --dry-run
+geodesy-analysis-gamma-mb --config /absolute/PROJECT/config/GAMMA_mb/gamma_sbas_mb.cfg --case main --dry-run
+```
+
+## 8. 日志与重跑
 
 日志统一位于 `<processing_root>/LOG/ANALYSIS/<STAGE>/`。失败日志目录会追加
 `failed-logs-N`，终端报错会给出位置。
@@ -168,7 +181,7 @@ MCF 输出与该列表同步。科学结果、掩膜和拟合数据写入
 干涉输出若在项目外则记录为绝对路径。迁移期仍能读取已有 schema v1 基线清单。本次代码变更不会移动、
 复制或删除已有研究项目数据。
 
-## 8. 当前终点
+## 9. 当前终点
 
-当前链条止于 GAMMA quad 去趋势清单。大气改正和时序分析属于接下来
-的 Analysis 阶段，不应把本流程的完成误解为完整 InSAR 反演已经完成。
+当前 GAMMA 链条已迁移到大气改正及 stacking、单对 DInSAR、`mb` 时序产品。
+MintPy、DS-InSAR 等其他方法仍需后续独立迁移。

@@ -31,6 +31,9 @@ This repository is not yet the default implementation.
 - `insar/filtering/`：公共清单、配置、计划与发布；`methods/` 隔离 NL-InSAR、
   GAMMA BM3D 和 GAMMA ADF 的科学实现。
 - `insar/unwrapping/gamma/mcf/`：读取一个显式滤波清单，构建掩膜和参考点并执行 MCF。
+- `insar/detrending/gamma/quad/`：去除解缠相位的 GAMMA quad 空间趋势。
+- `insar/atmosphere/gamma/`：按显式方法执行大气相位改正。
+- `insar/time_series/gamma/`：共享清单输入以及 stacking、单对 DInSAR、`mb` 工作流。
 
 卫星差异在 PRE 结束前消化；进入 Analysis 后统一消费雷达坐标 RSLC。处理软件差异
 则保留在 `gamma/`、未来的 `isce/` 等独立目录，避免混用命令和参数。
@@ -60,6 +63,13 @@ Analysis 只读取 `registered_stack.json`，不扫描 PRE 文件夹猜测影像
   `FIGURES/INTF/`、`FIGURES/FILTERING/<METHOD>/` 和 `FIGURES/UNW/GAMMA_MCF/`
   保存各自阶段的 GAMMA DISP 原生 BMP 快视图。
   图片按阶段/方法平铺，不建立日期对子目录。
+- `ATMOSPHERE/<METHOD>/` 保存按方法区分的大气改正结果；
+  `TIMESERIES/{STACKING,DINSAR,GAMMA_MB}/` 保存速度和累计 LOS 位移，`GAMMA_MB`
+  的大体量中间时序直接写入 `INTERMEDIATE/`。
+
+仓库公开 CFG 统一位于 `config/GAMMA_mb/`。这里的目录名表示配置所属处理方法族，
+不再增加没有信息增益的 `analysis/` 中间层；项目运行时可保留默认路径，也可显式覆盖
+输入、科学输出、快视图和日志路径。
 
 新 writer 只发布 schema v2：同一清单拥有的资产使用清单相对路径，跨阶段引用使用
 明确命名的项目相对字段；用户指定项目外输出时，相应路径字段存绝对路径。迁移期

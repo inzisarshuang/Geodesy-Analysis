@@ -18,29 +18,40 @@ from geodesy_analysis.insar.unwrapping.gamma.mcf.config import load_gamma_mcf_co
 from geodesy_analysis.insar.detrending.gamma.quad.config import (
     load_gamma_quad_detrend_config,
 )
+from geodesy_analysis.insar.atmosphere.gamma.config import (
+    load_gamma_atmosphere_config,
+)
+from geodesy_analysis.insar.time_series.gamma.dinsar.config import (
+    load_gamma_dinsar_config,
+)
+from geodesy_analysis.insar.time_series.gamma.mb.config import load_gamma_mb_config
+from geodesy_analysis.insar.time_series.gamma.stacking.config import (
+    load_gamma_stacking_config,
+)
 
 
 class ConfigExampleTests(unittest.TestCase):
     """Keep examples aligned with the formal project/case contract."""
 
     repository = Path(__file__).resolve().parents[1]
+    config_root = repository / "config/GAMMA_mb"
 
     def _write_example(self, root: Path, name: str) -> Path:
-        source = self.repository / "config_examples/analysis" / name
+        source = self.config_root / name
         text = source.read_text(encoding="utf-8").replace(
             "/path/to/research-project", str(root)
         )
-        target = root / "S1/ASCENDING_128/config/analysis" / name
+        target = root / "config/GAMMA_mb" / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text, encoding="utf-8")
         return target
 
     def _write_geocoding_example(self, root: Path) -> Path:
-        source = self.repository / "config_examples/analysis/gamma_geocoding.cfg"
+        source = self.config_root / "gamma_geocoding.cfg"
         text = source.read_text(encoding="utf-8").replace(
             "/path/to/research-project", str(root)
         )
-        target = root / "config/analysis/gamma_geocoding.cfg"
+        target = root / "config/GAMMA_mb/gamma_geocoding.cfg"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text, encoding="utf-8")
         return target
@@ -52,8 +63,14 @@ class ConfigExampleTests(unittest.TestCase):
             "S1/ASCENDING_128/GAMMA/INTF/interferogram_manifest.json",
             "S1/ASCENDING_128/GAMMA/FILTERING/NL_INSAR/filtering_manifest.json",
             "S1/ASCENDING_128/GAMMA/UNW/GAMMA_MCF/unwrapping_manifest.json",
+            "S1/ASCENDING_128/GAMMA/DETRENDING/GAMMA_QUAD/detrending_manifest.json",
+            "S1/ASCENDING_128/GAMMA_mb/ATMOSPHERE/GAMMA_ATM_MOD_2D_AUTO/atmosphere_manifest.json",
             "TOPOGRAPHY/jishishan_cop30/GAMMA/jishishan_cop30.dem",
             "TOPOGRAPHY/jishishan_cop30/GAMMA/jishishan_cop30.dem.par",
+            "S1/ASCENDING_128/GAMMA/GEOCODING/lookup_table",
+            "S1/ASCENDING_128/GAMMA/GEOCODING/demcrop.dem",
+            "S1/ASCENDING_128/GAMMA/GEOCODING/demcrop.dem_par",
+            "S1/ASCENDING_128/GAMMA/BASELINE/image_pairs_SBAS",
         ):
             path = root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -68,6 +85,10 @@ class ConfigExampleTests(unittest.TestCase):
             filtering_cfg = self._write_example(root, "insar_filtering.cfg")
             mcf_cfg = self._write_example(root, "gamma_mcf_unwrapping.cfg")
             quad_cfg = self._write_example(root, "gamma_quad_detrending.cfg")
+            atmosphere_cfg = self._write_example(root, "gamma_atmosphere.cfg")
+            dinsar_cfg = self._write_example(root, "gamma_dinsar.cfg")
+            stacking_cfg = self._write_example(root, "gamma_stacking.cfg")
+            mb_cfg = self._write_example(root, "gamma_sbas_mb.cfg")
             self._write_geocoding_example(root)
             previous = Path.cwd()
             try:
@@ -77,6 +98,10 @@ class ConfigExampleTests(unittest.TestCase):
                 filtering = load_filtering_config(filtering_cfg)
                 (mcf,) = load_gamma_mcf_config(mcf_cfg)
                 (quad,) = load_gamma_quad_detrend_config(quad_cfg)
+                atmosphere = load_gamma_atmosphere_config(atmosphere_cfg)
+                (dinsar,) = load_gamma_dinsar_config(dinsar_cfg)
+                (stacking,) = load_gamma_stacking_config(stacking_cfg)
+                (mb,) = load_gamma_mb_config(mb_cfg)
             finally:
                 os.chdir(previous)
 
@@ -120,22 +145,35 @@ class ConfigExampleTests(unittest.TestCase):
                 quad.output_dir,
                 root / "S1/ASCENDING_128/GAMMA/DETRENDING/GAMMA_QUAD",
             )
+            self.assertGreaterEqual(len(atmosphere), 1)
+            self.assertEqual(
+                dinsar.output_dir,
+                root / "S1/ASCENDING_128/GAMMA_mb/TIMESERIES/DINSAR",
+            )
+            self.assertEqual(
+                stacking.output_dir,
+                root / "S1/ASCENDING_128/GAMMA_mb/TIMESERIES/STACKING",
+            )
+            self.assertEqual(
+                mb.output_dir,
+                root / "S1/ASCENDING_128/GAMMA_mb/TIMESERIES/GAMMA_MB",
+            )
 
     def test_examples_document_stage_owned_flat_quicklooks(self) -> None:
-        baseline = (self.repository / "config_examples/analysis/gamma_baseline.cfg").read_text(
+        baseline = (self.config_root / "gamma_baseline.cfg").read_text(
             encoding="utf-8"
         )
         interferogram = (
-            self.repository / "config_examples/analysis/gamma_interferogram.cfg"
+            self.config_root / "gamma_interferogram.cfg"
         ).read_text(encoding="utf-8")
         geocoding = (
-            self.repository / "config_examples/analysis/gamma_geocoding.cfg"
+            self.config_root / "gamma_geocoding.cfg"
         ).read_text(encoding="utf-8")
         filtering = (
-            self.repository / "config_examples/analysis/insar_filtering.cfg"
+            self.config_root / "insar_filtering.cfg"
         ).read_text(encoding="utf-8")
         mcf = (
-            self.repository / "config_examples/analysis/gamma_mcf_unwrapping.cfg"
+            self.config_root / "gamma_mcf_unwrapping.cfg"
         ).read_text(encoding="utf-8")
         combined = baseline + interferogram + geocoding + filtering + mcf
 
@@ -167,6 +205,29 @@ class ConfigExampleTests(unittest.TestCase):
         self.assertIn(".tflt.filt.unw.bmp", mcf)
         self.assertNotRegex(combined, r"VISUALIZATION/[^\n#]*/pairs/")
         self.assertNotIn("PNG", combined)
+
+    def test_all_packaged_configs_publish_the_path_contract(self) -> None:
+        expected = {
+            "gamma_atmosphere.cfg",
+            "gamma_baseline.cfg",
+            "gamma_dinsar.cfg",
+            "gamma_geocoding.cfg",
+            "gamma_interferogram.cfg",
+            "gamma_mcf_unwrapping.cfg",
+            "gamma_quad_detrending.cfg",
+            "gamma_sbas_mb.cfg",
+            "gamma_stacking.cfg",
+            "insar_filtering.cfg",
+        }
+        self.assertEqual({path.name for path in self.config_root.glob("*.cfg")}, expected)
+        for path in self.config_root.glob("*.cfg"):
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(path=path):
+                self.assertIn("PATH CONTRACT / 处理链路径契约", text)
+                self.assertIn("INPUTS / 输入", text)
+                self.assertIn("OUTPUTS / 输出", text)
+                self.assertIn("DOWNSTREAM / 下游", text)
+                self.assertIn("REUSE / 复用", text)
 
 
 if __name__ == "__main__":

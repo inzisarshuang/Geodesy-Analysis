@@ -108,7 +108,7 @@ class FilteringCliTests(unittest.TestCase):
         repository = Path(__file__).resolve().parents[1]
         self.assertIn("geodesy-analysis-filtering", (repository / "pyproject.toml").read_text(encoding="utf-8"))
         example = (
-            repository / "config_examples/analysis/insar_filtering.cfg"
+            repository / "config/GAMMA_mb/insar_filtering.cfg"
         ).read_text(encoding="utf-8")
         for value in ("nl_insar", "gamma_bm3d", "gamma_adf", "output_dir", "自动", "凭据安全"):
             self.assertIn(value, example)

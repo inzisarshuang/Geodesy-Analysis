@@ -205,7 +205,7 @@ visualization_dir = S1/ASCENDING_128/VISUALIZATION/INTERFEROGRAM_GENERATION/GAMM
             with self.subTest(command=command):
                 self.assertIn(command, project)
 
-        example = (repository / "config_examples/analysis/gamma_interferogram.cfg").read_text(
+        example = (repository / "config/GAMMA_mb/gamma_interferogram.cfg").read_text(
             encoding="utf-8"
         )
         for required in (

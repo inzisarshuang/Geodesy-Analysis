@@ -69,7 +69,7 @@ class GammaMcfCliTests(unittest.TestCase):
         repository = Path(__file__).resolve().parents[1]
         self.assertIn("geodesy-analysis-gamma-mcf", (repository / "pyproject.toml").read_text(encoding="utf-8"))
         example = (
-            repository / "config_examples/analysis/gamma_mcf_unwrapping.cfg"
+            repository / "config/GAMMA_mb/gamma_mcf_unwrapping.cfg"
         ).read_text(encoding="utf-8")
         for value in ("filtering_manifest", "pairs.txt", "reference_mode", "reference_range", "mcf_mode", "output_dir", "凭据安全"):
             self.assertIn(value, example)

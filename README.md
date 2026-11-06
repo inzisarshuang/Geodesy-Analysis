@@ -6,17 +6,18 @@ time-series analysis.
 
 本仓库负责传感器预处理之后的科学分析。目前已建立从配准 RSLC 到基线网络、差分
 干涉图和相干性的正式 GAMMA 工作流，并支持 NL-InSAR、GAMMA BM3D 与 GAMMA ADF
-三种清单驱动滤波方法、GAMMA MCF 解缠和 quad 相位去趋势；大气改正和时序模块按后续阶段继续迁移。
+三种清单驱动滤波方法、GAMMA MCF 解缠、quad 相位去趋势、大气改正，以及
+GAMMA stacking、单对 DInSAR 和 `mb` SBAS/ISBAS 时序处理。
 
 ## 1. Repository Scope / 仓库定位
 
 This repository owns scientific processing after sensor preprocessing. Its current
-implemented boundary runs from a validated registered stack through GAMMA quad phase
-detrending. Atmosphere correction, MintPy, and DS-InSAR are not included in the
-current completion claim.
+implemented boundary runs from a validated registered stack through GAMMA atmosphere
+correction and the migrated stacking, DInSAR, and `mb` time-series workflows. MintPy
+and DS-InSAR are not included in the current completion claim.
 
 本仓库负责传感器预处理之后的科学处理。当前已实现边界从通过校验的注册栈延伸到
-GAMMA quad 相位去趋势；大气改正、MintPy 和 DS-InSAR 不在当前完成声明内。
+GAMMA 大气改正及 stacking、DInSAR、`mb` 时序处理；MintPy 和 DS-InSAR 不在当前完成声明内。
 
 Legacy scripts remain a fallback reference until real-data comparison is complete,
 but new code does not import the legacy repository. Refactoring changes contracts for
@@ -36,9 +37,10 @@ Geodesy-Analysis/
 │       ├── interferogram_generation/   # MLI、差分干涉图与相干性
 │       ├── filtering/                  # NL-InSAR、GAMMA BM3D、GAMMA ADF
 │       ├── unwrapping/gamma/mcf/       # GAMMA MCF 解缠
-│       └── detrending/gamma/quad/      # GAMMA quad 相位去趋势
-├── config_examples/
-│   └── analysis/                       # Analysis 阶段正式 CFG 示例
+│       ├── detrending/gamma/quad/      # GAMMA quad 相位去趋势
+│       ├── atmosphere/gamma/           # GAMMA 大气改正
+│       └── time_series/gamma/          # stacking、DInSAR、GAMMA mb
+├── config/GAMMA_mb/                    # 按处理方法归类的正式 CFG
 ├── docs/
 │   ├── architecture.md                 # 仓库边界和模块职责
 │   └── workflows/gamma_insar.md        # 从 PRE 到干涉结果的操作顺序
@@ -58,6 +60,9 @@ Geodesy-Analysis/
 4. `geodesy-analysis-filtering` 从干涉清单选择方法并发布统一滤波清单。
 5. `geodesy-analysis-gamma-mcf` 从一个显式滤波清单生成掩膜并执行 MCF 解缠。
 6. `geodesy-analysis-gamma-quad-detrend` 校验 MCF、滤波和干涉来源链，并对所选相位去趋势。
+7. `geodesy-analysis-gamma-atmosphere` 生成清单驱动的大气改正相位。
+8. 选择 `geodesy-analysis-gamma-stacking`、`geodesy-analysis-gamma-dinsar` 或
+   `geodesy-analysis-gamma-mb` 生成速度或累计 LOS 位移产品。
 
 第 3–6 步在同一个 Analysis 命令中同步调用 GAMMA DISP，分别生成强度、相位、
 相干性、滤波、解缠和去趋势 BMP 质检图；不需要独立的可视化 CFG 或第二次命令。
@@ -83,12 +88,16 @@ Geodesy-Analysis/
 /home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-filtering --help
 /home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-mcf --help
 /home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-quad-detrend --help
+/home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-atmosphere --help
+/home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-stacking --help
+/home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-dinsar --help
+/home/yilun/miniconda3/envs/envInSAR/bin/geodesy-analysis-gamma-mb --help
 ```
 
 ## 5. Quick Start / 快速开始
 
-先复制并修改 `config_examples/analysis/gamma_baseline.cfg`，使用 `--dry-run` 检查，再正式
-生成基线。随后复制 `config_examples/analysis/gamma_interferogram.cfg`，用同样方式检查和
+从仓库 `config/GAMMA_mb/` 复制或直接参考所需 CFG，使用 `--dry-run` 检查，再正式
+生成基线。随后修改 `gamma_interferogram.cfg`，用同样方式检查和
 运行干涉阶段。如需基线图，使用 Geodesy-Visualization 的
 `config_examples/visualization/baseline_plot.cfg`。CFG 的 `[project] root` 决定全部相对路径，
 与终端当前目录无关。每个 `[case:main]` 还必须声明类似
@@ -96,15 +105,13 @@ Geodesy-Analysis/
 目录命名。
 
 ```bash
-geodesy-analysis-gamma-baseline --config /absolute/PROJECT/config/2analysis/gamma_baseline.cfg --case main --dry-run
-geodesy-analysis-gamma-baseline --config /absolute/PROJECT/config/2analysis/gamma_baseline.cfg --case main
-geodesy-analysis-gamma-interferogram --config /absolute/PROJECT/config/2analysis/gamma_interferogram.cfg --case main --dry-run
-geodesy-analysis-gamma-interferogram --config /absolute/PROJECT/config/2analysis/gamma_interferogram.cfg --case main
-geodesy-analysis-filtering --config /absolute/PROJECT/config/2analysis/insar_filtering.cfg --dry-run
-geodesy-analysis-filtering --config /absolute/PROJECT/config/2analysis/insar_filtering.cfg --case nl_insar
-geodesy-analysis-gamma-mcf --config /absolute/PROJECT/config/2analysis/gamma_mcf_unwrapping.cfg --case main
-geodesy-analysis-gamma-quad-detrend --config /absolute/PROJECT/config/2analysis/gamma_quad_detrending.cfg --case main --dry-run
-geodesy-analysis-gamma-quad-detrend --config /absolute/PROJECT/config/2analysis/gamma_quad_detrending.cfg --case main
+geodesy-analysis-gamma-baseline --config /absolute/PROJECT/config/GAMMA_mb/gamma_baseline.cfg --case main --dry-run
+geodesy-analysis-gamma-interferogram --config /absolute/PROJECT/config/GAMMA_mb/gamma_interferogram.cfg --case main --dry-run
+geodesy-analysis-filtering --config /absolute/PROJECT/config/GAMMA_mb/insar_filtering.cfg --case nl_insar
+geodesy-analysis-gamma-mcf --config /absolute/PROJECT/config/GAMMA_mb/gamma_mcf_unwrapping.cfg --case main
+geodesy-analysis-gamma-quad-detrend --config /absolute/PROJECT/config/GAMMA_mb/gamma_quad_detrending.cfg --case main
+geodesy-analysis-gamma-atmosphere --config /absolute/PROJECT/config/GAMMA_mb/gamma_atmosphere.cfg --case main
+geodesy-analysis-gamma-mb --config /absolute/PROJECT/config/GAMMA_mb/gamma_sbas_mb.cfg --case main --dry-run
 ```
 
 ## 6. Data And Output Behavior / 数据与输出行为
@@ -117,6 +124,7 @@ geodesy-analysis-gamma-quad-detrend --config /absolute/PROJECT/config/2analysis/
   匹配网格的 WGS84 radar height，以及 `gc_map2` 按 SAR 覆盖范围裁剪的
   `demcrop.dem` / `demcrop.dem_par`；地图坐标栅格使用该 `.dem_par` 执行 `data2geotiff`
 - 科学结果：`FILTERING/<METHOD>/`、`UNW/GAMMA_MCF/`、`DETRENDING/GAMMA_QUAD/`
+- 大气和时序结果：`ATMOSPHERE/<METHOD>/`、`TIMESERIES/{STACKING,DINSAR,GAMMA_MB}/`
 - 日志：`<processing_root>/LOG/ANALYSIS/<STAGE>/`
 - 质检图：`<processing_root>/FIGURES/{INTF,FILTERING,UNW,DETRENDING}/...`
 

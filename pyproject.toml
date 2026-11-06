@@ -34,4 +34,4 @@ geodesy-analysis-gamma-mb = "geodesy_analysis.insar.time_series.gamma.mb.cli:mai
 where = ["src"]
 
 [tool.setuptools.data-files]
-"share/geodesy-analysis/config_examples/analysis" = ["config_examples/analysis/*.cfg"]
+"share/geodesy-analysis/config/GAMMA_mb" = ["config/GAMMA_mb/*.cfg"]
