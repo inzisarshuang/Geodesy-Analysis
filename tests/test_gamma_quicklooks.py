@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 from geodesy_analysis.insar.common.gamma_quicklooks import (
+    atmosphere_phase_quicklook_command,
     coherence_quicklook_command,
     mli_quicklook_command,
     require_nonempty_quicklook,
@@ -147,6 +148,29 @@ class GammaQuicklookTests(unittest.TestCase):
                 "2",
                 "rmg.cm",
                 "pair.tflt.filt.unw.bmp",
+            ),
+        )
+        self.assertEqual(
+            atmosphere_phase_quicklook_command(
+                Path("pair.atm.unw"),
+                137,
+                Path("pair.atm.unw.bmp"),
+                background=Path("master.mli"),
+            ),
+            (
+                "rasdt_pwr",
+                "pair.atm.unw",
+                "master.mli",
+                "137",
+                "1",
+                "0",
+                "1",
+                "1",
+                "-",
+                "-",
+                "2",
+                "rmg.cm",
+                "pair.atm.unw.bmp",
             ),
         )
         self.assertEqual(

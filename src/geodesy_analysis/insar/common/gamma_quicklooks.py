@@ -127,6 +127,20 @@ def unwrapped_phase_quicklook_command(
     return _background_free_command(data, width, output, "rmg.cm")
 
 
+def atmosphere_phase_quicklook_command(
+    data: Path,
+    width: int,
+    output: Path,
+    *,
+    background: Path | None = None,
+) -> tuple[str, ...]:
+    """Build the stage-owned atmosphere/corrected-phase QC command."""
+
+    return unwrapped_phase_quicklook_command(
+        data, width, output, background=background
+    )
+
+
 def require_nonempty_quicklook(path: Path, label: str) -> Path:
     """Require a GAMMA DISP invocation to have written a nonempty file."""
 
@@ -138,6 +152,7 @@ def require_nonempty_quicklook(path: Path, label: str) -> Path:
 
 
 __all__ = [
+    "atmosphere_phase_quicklook_command",
     "coherence_quicklook_command",
     "mli_quicklook_command",
     "require_nonempty_quicklook",
