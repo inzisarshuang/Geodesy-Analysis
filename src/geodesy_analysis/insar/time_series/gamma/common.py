@@ -62,6 +62,7 @@ class GammaTimeSeriesInputs:
     lines: int
     mli_assets: tuple[GammaMliAsset, ...]
     radar_height: Path
+    final_mask: Path | None
     lookup_table: Path
     map_dem: Path
     map_dem_parameter: Path
@@ -275,6 +276,18 @@ def load_gamma_time_series_inputs(
             case_id=case_id,
         )
     ifg_path, interferogram, ifg_digest = lineage["interferogram"]
+    unwrap_path, unwrapping, _ = lineage["unwrapping"]
+    final_mask = None
+    mask_payload = unwrapping.get("mask")
+    if isinstance(mask_payload, dict) and mask_payload.get("binary_mask_path"):
+        final_mask = _path(
+            root,
+            mask_payload.get("binary_mask_path"),
+            "MCF binary mask",
+            base=unwrap_path.parent,
+        )
+        if final_mask.stat().st_size != width * lines:
+            raise ValueError("MCF binary mask byte size does not match atmosphere grid")
 
     baseline_path = _path(
         root,
@@ -471,6 +484,7 @@ def load_gamma_time_series_inputs(
         lines=lines,
         mli_assets=tuple(mli_by_date[date] for date in stack.dates),
         radar_height=radar,
+        final_mask=final_mask,
         lookup_table=lookup,
         map_dem=resolved_map_dem,
         map_dem_parameter=resolved_map_parameter,

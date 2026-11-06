@@ -151,8 +151,12 @@ class GammaTimeSeriesCommonTests(unittest.TestCase):
                 "interferogram_manifest_digest": ifg_digest,
             },
         )
+        unwrapping_dir = processing / "UNWRAPPING/GAMMA_MCF"
+        final_mask = unwrapping_dir / "mask/final.mask.bin"
+        final_mask.parent.mkdir(parents=True, exist_ok=True)
+        final_mask.write_bytes(bytes((1, 1, 0, 1)))
         unwrapping, unwrapping_digest = self._write_manifest(
-            processing / "UNWRAPPING/GAMMA_MCF/unwrapping_manifest.json",
+            unwrapping_dir / "unwrapping_manifest.json",
             {
                 "schema_version": 2,
                 "status": "complete",
@@ -160,6 +164,7 @@ class GammaTimeSeriesCommonTests(unittest.TestCase):
                 "method": "gamma_mcf",
                 "filtering_manifest_project_path": filtering.relative_to(project).as_posix(),
                 "filtering_manifest_digest": filtering_digest,
+                "mask": {"binary_mask_path": "mask/final.mask.bin"},
             },
         )
         detrending, detrending_digest = self._write_manifest(
