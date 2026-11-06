@@ -5,12 +5,31 @@ from __future__ import annotations
 import hashlib
 import json
 
+from geodesy_analysis.insar.time_series.gamma.common import (
+    gamma_file_identity,
+    gamma_time_series_asset_identities,
+)
+
 from .models import GammaMbPlan
+
+COMMAND_CONTRACT = (
+    "mb",
+    "tpf_2d",
+    "ts_rate",
+    "dispmap",
+    "uchar2float",
+    "geocode_back",
+    "rasdt_pwr",
+    "mk_dispmap_2d",
+    "mk_geo_data_all",
+)
 
 
 def gamma_mb_input_signature(plan: GammaMbPlan) -> str:
     payload = {
         "atmosphere_manifest_digest": plan.inputs.atmosphere_manifest_digest,
+        "auxiliary_assets": gamma_time_series_asset_identities(plan.inputs),
+        "command_contract": COMMAND_CONTRACT,
         "case_id": plan.case.case_id,
         "dtmax": plan.case.dtmax,
         "flags": [
@@ -37,7 +56,11 @@ def gamma_mb_input_signature(plan: GammaMbPlan) -> str:
             plan.case.display_max,
             plan.case.colormap,
         ],
-        "visdt_pwr": None if plan.case.visdt_pwr is None else str(plan.case.visdt_pwr),
+        "visdt_pwr": (
+            None
+            if plan.case.visdt_pwr is None
+            else gamma_file_identity(plan.case.project_root, plan.case.visdt_pwr)
+        ),
     }
     return hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()

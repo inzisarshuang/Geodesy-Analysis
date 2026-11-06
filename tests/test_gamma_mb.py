@@ -7,12 +7,16 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 
 from geodesy_analysis.insar.time_series.gamma.mb.config import load_gamma_mb_config
 from geodesy_analysis.insar.time_series.gamma.mb.plan import build_gamma_mb_plan
 from geodesy_analysis.insar.time_series.gamma.mb.runner import run_gamma_mb
+from geodesy_analysis.insar.time_series.gamma.mb.publication import (
+    gamma_mb_input_signature,
+)
 
 import test_gamma_time_series_common as common_fixture
 
@@ -159,6 +163,40 @@ generate_geocoded_displacement = true
             executable.chmod(0o644)
             with self.assertRaisesRegex(ValueError, "executable"):
                 load_gamma_mb_config(cfg)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            wrong_name = root / "visdt_pwr"
+            wrong_name.write_text("#!/bin/sh\nexit 0\n")
+            wrong_name.chmod(0o755)
+            _, cfg = self._config(root, extra=f"visdt_pwr = {wrong_name}")
+            with self.assertRaisesRegex(ValueError, "visdt_pwr.py"):
+                load_gamma_mb_config(cfg)
+
+    def test_explicit_visdt_directory_is_added_to_the_command_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "tools/visdt_pwr.py"
+            executable.parent.mkdir()
+            executable.write_text("#!/bin/sh\nexit 0\n")
+            executable.chmod(0o755)
+            _, cfg = self._config(root, extra=f"visdt_pwr = {executable}")
+            plan = build_gamma_mb_plan(load_gamma_mb_config(cfg)[0])
+            fake = _FakeGamma()
+            with patch(
+                "geodesy_analysis.insar.time_series.gamma.mb.runner.SubprocessCommandRunner",
+                return_value=fake,
+            ) as factory:
+                run_gamma_mb(plan, progress_sink=lambda _: None)
+            environment = factory.call_args.kwargs["environment"]
+            self.assertEqual(environment["PATH"].split(":", 1)[0], str(executable.parent))
+
+    def test_signature_covers_geocoding_assets_and_command_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            _, cfg = self._config(Path(directory))
+            plan = build_gamma_mb_plan(load_gamma_mb_config(cfg)[0])
+            before = gamma_mb_input_signature(plan)
+            plan.inputs.map_dem_parameter.write_bytes(b"changed DEM parameter")
+            self.assertNotEqual(gamma_mb_input_signature(plan), before)
 
     def test_exact_commands_and_manifest_quantities(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -81,6 +81,40 @@ def _manifest_digest(payload: dict[str, object], raw: bytes) -> str:
     return supplied
 
 
+def gamma_file_identity(project_root: Path, path: Path) -> dict[str, str]:
+    """Return a portable path plus content digest for a required input file."""
+
+    resolved = Path(path).resolve(strict=True)
+    digest = hashlib.sha256()
+    with resolved.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    try:
+        declared = resolved.relative_to(Path(project_root).resolve()).as_posix()
+    except ValueError:
+        declared = resolved.as_posix()
+    return {"path": declared, "sha256": digest.hexdigest()}
+
+
+def gamma_time_series_asset_identities(
+    inputs: GammaTimeSeriesInputs,
+) -> dict[str, dict[str, str]]:
+    """Identify geocoding, height, and mask assets used by time-series commands."""
+
+    assets = {
+        "lookup_table": inputs.lookup_table,
+        "map_dem": inputs.map_dem,
+        "map_dem_parameter": inputs.map_dem_parameter,
+        "radar_height": inputs.radar_height,
+    }
+    if inputs.final_mask is not None:
+        assets["final_mask"] = inputs.final_mask
+    return {
+        name: gamma_file_identity(inputs.project_root, path)
+        for name, path in assets.items()
+    }
+
+
 def _manifest(path: Path, label: str) -> tuple[dict[str, object], str]:
     source = Path(path).expanduser()
     if source.is_symlink():
@@ -461,6 +495,19 @@ def load_gamma_time_series_inputs(
         )
         for name in selected_names
     )
+    selected_date_set = {
+        date for pair in selected for date in (pair.master, pair.slave)
+    }
+    acquisition_dates = tuple(
+        date for date in stack.dates if date in selected_date_set
+    )
+    if len(acquisition_dates) != len(selected_date_set):
+        raise ValueError("selected network contains a date absent from registered stack")
+    reference_date = (
+        stack.reference_date
+        if stack.reference_date in selected_date_set
+        else acquisition_dates[0]
+    )
 
     return GammaTimeSeriesInputs(
         project_root=root,
@@ -478,11 +525,11 @@ def load_gamma_time_series_inputs(
             (name, value[2]) for name, value in lineage.items()
         ),
         pairs=selected,
-        acquisition_dates=stack.dates,
-        reference_date=stack.reference_date,
+        acquisition_dates=acquisition_dates,
+        reference_date=reference_date,
         width=width,
         lines=lines,
-        mli_assets=tuple(mli_by_date[date] for date in stack.dates),
+        mli_assets=tuple(mli_by_date[date] for date in acquisition_dates),
         radar_height=radar,
         final_mask=final_mask,
         lookup_table=lookup,
@@ -554,6 +601,8 @@ __all__ = [
     "GammaMliAsset",
     "GammaTimeSeriesInputs",
     "GammaTimeSeriesPair",
+    "gamma_file_identity",
+    "gamma_time_series_asset_identities",
     "load_gamma_time_series_inputs",
     "write_gamma_diff_tab",
     "write_gamma_itab",

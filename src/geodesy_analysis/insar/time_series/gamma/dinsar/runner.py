@@ -18,7 +18,7 @@ from geodesy_analysis.insar.common.gamma_quicklooks import require_nonempty_quic
 from geodesy_analysis.io import atomic_output_directories
 
 from .models import GammaDinsarPlan
-from .publication import gamma_dinsar_input_signature
+from .publication import COMMAND_CONTRACT, gamma_dinsar_input_signature
 
 _TASK = "ANALYSIS_GAMMA_DINSAR"
 
@@ -306,7 +306,7 @@ def run_gamma_dinsar(
             ]
             provenance = {
                 "case_id": plan.case.case_id,
-                "command_contract": ["dispmap", "geocode_back", "rasdt_pwr"],
+                "command_contract": list(COMMAND_CONTRACT),
                 "input_signature": signature,
                 "log_dir_project_path": _portable(plan, plan.case.log_dir),
                 "schema_version": 2,

@@ -19,7 +19,7 @@ from geodesy_analysis.insar.time_series.gamma.common import write_gamma_diff_tab
 from geodesy_analysis.io import atomic_output_directories
 
 from .models import GammaStackingPlan
-from .publication import gamma_stacking_input_signature
+from .publication import COMMAND_CONTRACT, gamma_stacking_input_signature
 
 _TASK = "ANALYSIS_GAMMA_STACKING"
 
@@ -376,7 +376,7 @@ def run_gamma_stacking(
             ]
             provenance = {
                 "case_id": plan.case.case_id,
-                "commands": ["stacking", "dispmap", "geocode_back", "rasdt_pwr"],
+                "commands": list(COMMAND_CONTRACT),
                 "input_signature": signature,
                 "log_dir_project_path": _portable(plan, plan.case.log_dir),
                 "schema_version": 2,

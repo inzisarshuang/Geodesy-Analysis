@@ -205,6 +205,9 @@ class ConfigExampleTests(unittest.TestCase):
         self.assertIn(".tflt.filt.unw.bmp", mcf)
         self.assertNotRegex(combined, r"VISUALIZATION/[^\n#]*/pairs/")
         self.assertNotIn("PNG", combined)
+        for name in ("gamma_dinsar.cfg", "gamma_stacking.cfg", "gamma_sbas_mb.cfg"):
+            text = (self.config_root / name).read_text(encoding="utf-8")
+            self.assertNotIn("GEOCODING/lookup_table", text)
 
     def test_all_packaged_configs_publish_the_path_contract(self) -> None:
         expected = {

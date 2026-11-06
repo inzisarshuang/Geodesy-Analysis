@@ -288,6 +288,23 @@ class GammaTimeSeriesCommonTests(unittest.TestCase):
                 hashlib.sha256(pair_list.read_bytes()).hexdigest(),
             )
 
+    def test_explicit_pair_list_limits_epoch_and_mli_inventories(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = self._fixture(Path(directory))
+            pair_list = Path(directory) / "selected_pairs.txt"
+            pair_list.write_text(f"{self.pairs[0]}\n", encoding="utf-8")
+            inputs = self._load(fixture, pair_list=pair_list)
+            self.assertEqual(inputs.acquisition_dates, self.dates[:2])
+            self.assertEqual(
+                tuple(asset.date for asset in inputs.mli_assets), self.dates[:2]
+            )
+            staging = Path(directory) / "subset-staging"
+            staging.mkdir()
+            rmli = write_gamma_rmli_tab(inputs, staging / "RMLI_tab")
+            itab = write_gamma_itab(inputs, staging / "itab")
+            self.assertEqual(len(rmli.read_text().splitlines()), 2)
+            self.assertEqual(itab.read_text().splitlines(), ["1 2 1 1"])
+
     def test_old_manifest_requires_explicit_geometry_and_accepts_matching_overrides(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             fixture = self._fixture(Path(directory), declare_geometry=False)

@@ -17,6 +17,9 @@ from geodesy_analysis.insar.time_series.gamma.dinsar.plan import (
     build_gamma_dinsar_plan,
 )
 from geodesy_analysis.insar.time_series.gamma.dinsar.runner import run_gamma_dinsar
+from geodesy_analysis.insar.time_series.gamma.dinsar.publication import (
+    gamma_dinsar_input_signature,
+)
 
 import test_gamma_time_series_common as common_fixture
 
@@ -88,6 +91,15 @@ atmosphere_manifest = {fixture['atmosphere'].relative_to(fixture['project'])}
             _, cfg = self._config(Path(directory), pair="20231027-20240107")
             with self.assertRaisesRegex(ValueError, "selected pair"):
                 build_gamma_dinsar_plan(load_gamma_dinsar_config(cfg)[0])
+
+    def test_signature_covers_geocoding_assets_and_command_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            pair = common_fixture.GammaTimeSeriesCommonTests.pairs[0]
+            _, cfg = self._config(Path(directory), pair=pair)
+            plan = build_gamma_dinsar_plan(load_gamma_dinsar_config(cfg)[0])
+            before = gamma_dinsar_input_signature(plan)
+            plan.inputs.map_dem.write_bytes(b"changed DEM")
+            self.assertNotEqual(gamma_dinsar_input_signature(plan), before)
 
     def test_exact_commands_and_manifest_publish_cumulative_displacement(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

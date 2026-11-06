@@ -190,6 +190,8 @@ def load_gamma_mb_config(
         if not _TOKEN.fullmatch(colormap):
             raise ValueError(f"{source}: unsafe colormap")
         visdt = _path(paths, values.get("visdt_pwr", ""), "visdt_pwr", input_file=True)
+        if visdt is not None and visdt.name != "visdt_pwr.py":
+            raise ValueError(f"visdt_pwr must name the executable visdt_pwr.py: {visdt}")
         if visdt is not None and not os.access(visdt, os.X_OK):
             raise ValueError(f"visdt_pwr must be executable: {visdt}")
         output = _path(

@@ -19,6 +19,9 @@ from geodesy_analysis.insar.time_series.gamma.stacking.plan import (
 from geodesy_analysis.insar.time_series.gamma.stacking.runner import (
     run_gamma_stacking,
 )
+from geodesy_analysis.insar.time_series.gamma.stacking.publication import (
+    gamma_stacking_input_signature,
+)
 
 import test_gamma_time_series_common as common_fixture
 
@@ -164,6 +167,14 @@ reference_height = 2
             cfg.write_text(cfg.read_text() + f"pair_list = {pair_list}\n")
             with self.assertRaisesRegex(ValueError, "selected pair"):
                 build_gamma_stacking_plan(load_gamma_stacking_config(cfg)[0])
+
+    def test_signature_covers_geocoding_assets_and_command_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            _, cfg = self._config(Path(directory))
+            plan = build_gamma_stacking_plan(load_gamma_stacking_config(cfg)[0])
+            before = gamma_stacking_input_signature(plan)
+            plan.inputs.lookup_table.write_bytes(b"changed lookup")
+            self.assertNotEqual(gamma_stacking_input_signature(plan), before)
 
     def test_failure_reuse_mismatch_and_quicklook_repair_are_transactional(self) -> None:
         for program in ("stacking", "geocode_back"):

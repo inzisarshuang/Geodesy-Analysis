@@ -23,7 +23,7 @@ from geodesy_analysis.insar.time_series.gamma.common import (
 from geodesy_analysis.io import atomic_output_directories
 
 from .models import GammaMbPlan
-from .publication import gamma_mb_input_signature
+from .publication import COMMAND_CONTRACT, gamma_mb_input_signature
 
 _TASK = "ANALYSIS_GAMMA_MB"
 
@@ -158,7 +158,16 @@ def run_gamma_mb(
     if not isinstance(plan, GammaMbPlan):
         raise TypeError("plan must be GammaMbPlan")
     sink = progress_sink or print
-    delegate = command_runner or SubprocessCommandRunner()
+    environment = None
+    if plan.case.visdt_pwr is not None:
+        environment = dict(os.environ)
+        current_path = environment.get("PATH", "")
+        environment["PATH"] = os.pathsep.join(
+            value
+            for value in (str(plan.case.visdt_pwr.parent), current_path)
+            if value
+        )
+    delegate = command_runner or SubprocessCommandRunner(environment=environment)
     signature = gamma_mb_input_signature(plan)
     reference_mli = next(
         asset for asset in plan.inputs.mli_assets if asset.date == plan.inputs.reference_date
@@ -631,16 +640,7 @@ def run_gamma_mb(
             ]
             provenance = {
                 "case_id": plan.case.case_id,
-                "command_contract": [
-                    "mb",
-                    "tpf_2d",
-                    "ts_rate",
-                    "dispmap",
-                    "uchar2float",
-                    "geocode_back",
-                    "mk_dispmap_2d",
-                    "mk_geo_data_all",
-                ],
+                "command_contract": list(COMMAND_CONTRACT),
                 "input_signature": signature,
                 "log_dir_project_path": _portable(plan, plan.case.log_dir),
                 "schema_version": 2,

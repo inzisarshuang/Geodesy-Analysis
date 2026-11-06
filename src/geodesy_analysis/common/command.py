@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -33,6 +33,9 @@ class CommandExecutionError(RuntimeError):
 class SubprocessCommandRunner:
     """Execute one argv sequence directly, without invoking a shell."""
 
+    def __init__(self, *, environment: Mapping[str, str] | None = None) -> None:
+        self.environment = None if environment is None else dict(environment)
+
     def run(
         self,
         command: Sequence[str],
@@ -56,6 +59,7 @@ class SubprocessCommandRunner:
             completed = subprocess.run(
                 normalized,
                 cwd=working_directory,
+                env=self.environment,
                 input=stdin_text,
                 text=True,
                 stdout=stdout,
