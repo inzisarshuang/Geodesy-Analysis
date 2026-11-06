@@ -27,6 +27,7 @@ geodesy-analysis-gamma-mcf = "geodesy_analysis.insar.unwrapping.gamma.mcf.cli:ma
 geodesy-analysis-gamma-quad-detrend = "geodesy_analysis.insar.detrending.gamma.quad.cli:main"
 geodesy-analysis-gamma-atmosphere = "geodesy_analysis.insar.atmosphere.gamma.cli:main"
 geodesy-analysis-gamma-stacking = "geodesy_analysis.insar.time_series.gamma.stacking.cli:main"
+geodesy-analysis-gamma-dinsar = "geodesy_analysis.insar.time_series.gamma.dinsar.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
