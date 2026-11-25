@@ -236,14 +236,14 @@ class GammaQuadDetrendTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "must be true or false"):
                 load_gamma_quad_detrend_config(config)
 
-    def test_incomplete_existing_scientific_output_is_not_overwritten(self) -> None:
+    def test_failed_rerun_preserves_incomplete_existing_scientific_output(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root)
             plan.case.output_dir.mkdir(parents=True)
             previous = plan.case.output_dir / "previous-result"
             previous.write_text("keep me", encoding="utf-8")
-            with self.assertRaisesRegex(RuntimeError, "completion manifest is missing"):
+            with self.assertRaisesRegex(RuntimeError, "forced quad_sub failure"):
                 run_gamma_quad_detrend(
                     plan,
                     command_runner=_FakeGammaQuad(fail_on="quad_sub"),

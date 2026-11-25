@@ -147,23 +147,25 @@ class FilteringRunnerTests(unittest.TestCase):
             self.assertEqual(provenance["parameters"]["filter_threshold"], 0)
             self.assertEqual(provenance["quicklook_commands"]["phase"]["command"], "rasmph")
 
-    def test_complete_result_skips_and_changed_parameters_are_rejected(self) -> None:
+    def test_complete_result_and_changed_parameters_are_recomputed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root, "gamma_bm3d")
             run_filtering(plan, command_runner=_FakeGamma(), progress_sink=lambda _: None)
             repeated_fake = _FakeGamma()
             repeated = run_filtering(plan, command_runner=repeated_fake, progress_sink=lambda _: None)
-            self.assertEqual(repeated.status, "skipped")
-            self.assertEqual(repeated_fake.calls, [])
+            self.assertEqual(repeated.status, "complete")
+            self.assertTrue(repeated_fake.calls)
 
             config = root / "config/analysis/insar_filtering.cfg"
             config.write_text(config.read_text(encoding="utf-8") + "bm3d_block_size = 12\n", encoding="utf-8")
             changed = build_filtering_plan(load_filtering_config(config)[0])
             changed_fake = _FakeGamma()
-            with self.assertRaisesRegex(RuntimeError, "signature changed"):
-                run_filtering(changed, command_runner=changed_fake, progress_sink=lambda _: None)
-            self.assertEqual(changed_fake.calls, [])
+            changed_summary = run_filtering(
+                changed, command_runner=changed_fake, progress_sink=lambda _: None
+            )
+            self.assertEqual(changed_summary.status, "complete")
+            self.assertTrue(changed_fake.calls)
 
     def test_upstream_quicklook_metadata_does_not_block_recomputation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -183,8 +185,8 @@ class FilteringRunnerTests(unittest.TestCase):
             fake = _FakeGamma()
             summary = run_filtering(rebuilt, command_runner=fake, progress_sink=lambda _: None)
 
-            self.assertEqual(summary.status, "skipped")
-            self.assertEqual(fake.calls, [])
+            self.assertEqual(summary.status, "complete")
+            self.assertTrue(fake.calls)
 
     def test_command_failure_keeps_logs_without_publishing(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -217,7 +219,7 @@ class FilteringRunnerTests(unittest.TestCase):
             )
             self.assertEqual(len(failed), 1)
 
-    def test_missing_quicklooks_are_repaired_without_science_commands(self) -> None:
+    def test_missing_quicklooks_trigger_full_recomputation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root, "gamma_bm3d")
@@ -237,10 +239,10 @@ class FilteringRunnerTests(unittest.TestCase):
             fake = _FakeGamma()
             summary = run_filtering(plan, command_runner=fake, progress_sink=lambda _: None)
 
-            self.assertEqual(summary.status, "figures_repaired")
-            self.assertEqual([call[0] for call in fake.calls], ["rasmph", "rasdt_pwr"])
+            self.assertEqual(summary.status, "complete")
+            self.assertIn("bm3d", [call[0] for call in fake.calls])
 
-    def test_figure_repair_preserves_unrelated_visualization_contents(self) -> None:
+    def test_recomputation_replaces_unrelated_visualization_contents(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root, "gamma_adf")
@@ -249,15 +251,15 @@ class FilteringRunnerTests(unittest.TestCase):
             phase.unlink()
             fake = _FakeGamma()
             summary = run_filtering(plan, command_runner=fake, progress_sink=lambda _: None)
-            self.assertEqual(summary.status, "figures_repaired")
-            self.assertEqual([call[0] for call in fake.calls], ["rasmph"])
+            self.assertEqual(summary.status, "complete")
+            self.assertIn("adf", [call[0] for call in fake.calls])
 
             unrelated = plan.case.visualization_dir / "notes.txt"
             unrelated.write_text("keep\n", encoding="utf-8")
             overwrite = _FakeGamma()
             run_filtering(plan, command_runner=overwrite, progress_sink=lambda _: None)
-            self.assertEqual(overwrite.calls, [])
-            self.assertTrue(unrelated.exists())
+            self.assertTrue(overwrite.calls)
+            self.assertFalse(unrelated.exists())
 
     def test_expected_quicklook_name_cannot_be_a_symlink(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -274,7 +276,7 @@ class FilteringRunnerTests(unittest.TestCase):
             self.assertFalse(target.is_symlink())
             self.assertEqual(outside.read_bytes(), b"external")
 
-    def test_complete_output_skips_even_when_delegate_would_fail(self) -> None:
+    def test_failed_rerun_preserves_complete_output(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root, "gamma_adf")
@@ -286,16 +288,16 @@ class FilteringRunnerTests(unittest.TestCase):
                 if path.is_file()
             }
             fake = _FakeGamma("adf")
-            summary = run_filtering(
-                plan,
-                command_runner=fake,
-                progress_sink=lambda _: None,
-            )
-            self.assertEqual(summary.status, "skipped")
-            self.assertEqual(fake.calls, [])
+            with self.assertRaisesRegex(RuntimeError, "forced adf failure"):
+                run_filtering(
+                    plan,
+                    command_runner=fake,
+                    progress_sink=lambda _: None,
+                )
+            self.assertTrue(fake.calls)
             self.assertEqual({path: path.read_bytes() for path in existing}, existing)
 
-    def test_complete_output_does_not_enter_publication(self) -> None:
+    def test_publication_failure_restores_complete_output(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root, "gamma_adf")
@@ -319,13 +321,12 @@ class FilteringRunnerTests(unittest.TestCase):
             with patch(
                 "geodesy_analysis.io.os.replace",
                 side_effect=fail_science_publication,
-            ):
-                summary = run_filtering(
+            ), self.assertRaisesRegex(OSError, "synthetic science publication failure"):
+                run_filtering(
                     plan,
                     command_runner=_FakeGamma(),
                     progress_sink=lambda _: None,
                 )
-            self.assertEqual(summary.status, "skipped")
 
             self.assertEqual({path: path.read_bytes() for path in existing}, existing)
 

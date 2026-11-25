@@ -13,14 +13,13 @@ import numpy as np
 
 from geodesy_analysis.common.command import SubprocessCommandRunner
 from geodesy_analysis.common.progress import emit_progress
-from geodesy_analysis.common.reuse import ReuseState, classify_analysis_output
 from geodesy_analysis.insar.common.gamma_quicklooks import require_nonempty_quicklook
 from geodesy_analysis.insar.time_series.gamma.common import (
     write_gamma_diff_tab,
     write_gamma_itab,
     write_gamma_rmli_tab,
 )
-from geodesy_analysis.io import atomic_output_directories
+from geodesy_analysis.io import atomic_replace_output_directories
 
 from .models import GammaMbPlan
 from .publication import COMMAND_CONTRACT, gamma_mb_input_signature
@@ -174,68 +173,9 @@ def run_gamma_mb(
     )
     radar_figure = plan.case.figure_dir / "mean_los_velocity.radar.bmp"
     geo_figure = plan.case.figure_dir / "mean_los_velocity.geo.bmp"
-    reuse = classify_analysis_output(
-        plan.case.output_dir,
-        "timeseries_manifest.json",
-        signature,
-        project_root=plan.case.project_root,
-    )
-    if reuse.science_reusable:
-        manifest = reuse.manifest or {}
-        if (
-            manifest.get("method") != "gamma_mb"
-            or manifest.get("case_id") != plan.case.case_id
-            or manifest.get("atmosphere_manifest_digest")
-            != plan.inputs.atmosphere_manifest_digest
-        ):
-            raise RuntimeError("GAMMA mb manifest identity is inconsistent")
-        if reuse.state is ReuseState.FIGURES_MISSING:
-            _begin_logs(plan.case.log_dir)
-            if not radar_figure.is_file():
-                _render(
-                    plan,
-                    data=plan.case.output_dir / "mean_los_velocity",
-                    background=reference_mli.data,
-                    width=plan.inputs.width,
-                    output=radar_figure,
-                    delegate=delegate,
-                    stem="mean_velocity.radar",
-                )
-            if plan.case.generate_mean_geocoded and not geo_figure.is_file():
-                _render(
-                    plan,
-                    data=plan.case.output_dir / "mean_los_velocity.geo",
-                    background=plan.case.output_dir / "reference_mli.geo",
-                    width=plan.inputs.map_width,
-                    output=geo_figure,
-                    delegate=delegate,
-                    stem="mean_velocity.geo",
-                )
-            status = "figures_repaired"
-        else:
-            status = "skipped"
-        sink(
-            emit_progress(
-                task=_TASK,
-                event="batch_finished",
-                status=status,
-                stage="reuse",
-                total=len(plan.inputs.pairs),
-            )
-        )
-        return GammaMbRunSummary(
-            status,
-            len(plan.inputs.pairs),
-            len(plan.inputs.acquisition_dates),
-            plan.case.output_dir,
-        )
-    if reuse.state is not ReuseState.ABSENT:
-        raise RuntimeError(reuse.guidance)
-    if plan.case.figure_dir.exists() or plan.case.figure_dir.is_symlink():
-        raise RuntimeError("GAMMA mb science is absent but figure output already exists")
     _begin_logs(plan.case.log_dir)
     try:
-        with atomic_output_directories(
+        with atomic_replace_output_directories(
             plan.case.figure_dir, plan.case.output_dir
         ) as (figure_staging, staging):
             intermediate = staging / "INTERMEDIATE"
@@ -526,8 +466,30 @@ def run_gamma_mb(
                     )
                 geo_displacement_tab = geo_dir / "displacement_geo_tab"
                 geo_displacement_tab.write_text(
-                    "".join(f"{path}\n" for path in geo_displacement_products)
+                    "".join(f"{path.name}\n" for path in geo_displacement_products),
+                    encoding="utf-8",
                 )
+
+            # GAMMA reads the original table during processing. Publish it with
+            # paths relative to the table so the staging directory can be renamed.
+            if displacement_tab is not None:
+                records = (
+                    line.split(maxsplit=1)
+                    for line in displacement_tab.read_text(encoding="utf-8").splitlines()
+                    if line.strip()
+                )
+                displacement_tab.write_text(
+                    "".join(
+                        " ".join((os.path.relpath(path, displacement_tab.parent), *fields[1:]))
+                        + "\n"
+                        for path, fields in zip(displacement_products, records, strict=True)
+                    ),
+                    encoding="utf-8",
+                )
+            (staging / "images").write_text(
+                "".join(f"{date}\n" for date in plan.inputs.acquisition_dates),
+                encoding="utf-8",
+            )
 
             mean_products = {
                 "mean_phase_rate": {
@@ -611,6 +573,7 @@ def run_gamma_mb(
                 (json.dumps(manifest, sort_keys=True, indent=2) + "\n").encode()
             ).hexdigest()
             required = [
+                "images",
                 "diff_tab",
                 "RMLI_tab",
                 "itab",

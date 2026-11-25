@@ -141,18 +141,22 @@ atmosphere_manifest = {fixture['atmosphere'].relative_to(fixture['project'])}
             self.assertFalse(plan.case.figure_dir.exists())
 
             run_gamma_dinsar(plan, command_runner=_FakeGamma(), progress_sink=lambda _: None)
-            skip = _FakeGamma()
+            repeat = _FakeGamma()
             self.assertEqual(
-                run_gamma_dinsar(plan, command_runner=skip, progress_sink=lambda _: None).status,
-                "skipped",
+                run_gamma_dinsar(plan, command_runner=repeat, progress_sink=lambda _: None).status,
+                "complete",
             )
-            self.assertEqual(skip.calls, [])
-            with self.assertRaisesRegex(RuntimeError, "signature changed"):
+            self.assertTrue(repeat.calls)
+            changed = _FakeGamma()
+            self.assertEqual(
                 run_gamma_dinsar(
                     replace(plan, case=replace(plan.case, display_max=0.2)),
-                    command_runner=_FakeGamma(),
+                    command_runner=changed,
                     progress_sink=lambda _: None,
-                )
+                ).status,
+                "complete",
+            )
+            self.assertTrue(changed.calls)
             science = plan.case.output_dir / "cumulative_los_displacement"
             content = science.read_bytes()
             missing = plan.case.figure_dir / "cumulative_los_displacement.radar.bmp"
@@ -160,9 +164,9 @@ atmosphere_manifest = {fixture['atmosphere'].relative_to(fixture['project'])}
             repair = _FakeGamma()
             self.assertEqual(
                 run_gamma_dinsar(plan, command_runner=repair, progress_sink=lambda _: None).status,
-                "figures_repaired",
+                "complete",
             )
-            self.assertEqual([call[0] for call in repair.calls], ["rasdt_pwr"])
+            self.assertIn("dispmap", [call[0] for call in repair.calls])
             self.assertEqual(science.read_bytes(), content)
 
 

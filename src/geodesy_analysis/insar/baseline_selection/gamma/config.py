@@ -163,27 +163,9 @@ def load_gamma_baseline_config(
         processing_value = values.get("processing_root", "").strip() or None
         paths = bind_analysis_case(root, name, project_value, processing_value)
         layout = AnalysisProductLayout(paths) if processing_value is not None else None
-        registered_stack = resolve_case_input(
-            paths, values["registered_stack"]
-        )
-        expected_stacks = (
-            {
-                (layout.product("RSLC", "registered_stack.json")).resolve(),
-                (layout.product("RSLC", "SUBSET", "registered_stack.json")).resolve(),
-            }
-            if layout is not None
-            else {
-                (
-                    paths.case_root
-                    / "PRE/GAMMA/RSLC_SUBSET/registered_stack.json"
-                ).resolve()
-            }
-        )
-        if registered_stack not in expected_stacks:
-            raise ValueError(
-                f"{source}: registered_stack must be the canonical case PRE input: "
-                f"{', '.join(str(path) for path in sorted(expected_stacks))}"
-            )
+        registered_stack = resolve_case_input(paths, values["registered_stack"])
+        if not registered_stack.is_file():
+            raise ValueError(f"{source}: registered_stack must be a file: {registered_stack}")
         output_value = values.get("output_dir", "").strip()
         if not output_value:
             assert layout is not None

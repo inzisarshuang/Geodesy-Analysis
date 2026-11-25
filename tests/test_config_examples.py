@@ -59,18 +59,15 @@ class ConfigExampleTests(unittest.TestCase):
     def _inputs(self, root: Path) -> None:
         for relative in (
             "S1/ASCENDING_128/GAMMA/RSLC/SUBSET/registered_stack.json",
-            "S1/ASCENDING_128/GAMMA/BASELINE/baseline_manifest.json",
-            "S1/ASCENDING_128/GAMMA/INTF/interferogram_manifest.json",
-            "S1/ASCENDING_128/GAMMA/FILTERING/NL_INSAR/filtering_manifest.json",
-            "S1/ASCENDING_128/GAMMA/UNW/GAMMA_MCF/unwrapping_manifest.json",
-            "S1/ASCENDING_128/GAMMA/DETRENDING/GAMMA_QUAD/detrending_manifest.json",
+            "S1/ASCENDING_128/GAMMA_mb/BASELINE/baseline_manifest.json",
+            "S1/ASCENDING_128/GAMMA_mb/INTF/interferogram_manifest.json",
+            "S1/ASCENDING_128/GAMMA_mb/FILTERING/NL_INSAR/filtering_manifest.json",
+            "S1/ASCENDING_128/GAMMA_mb/UNW/GAMMA_MCF/unwrapping_manifest.json",
+            "S1/ASCENDING_128/GAMMA_mb/DETRENDING/GAMMA_QUAD/detrending_manifest.json",
             "S1/ASCENDING_128/GAMMA_mb/ATMOSPHERE/GAMMA_ATM_MOD_2D_AUTO/atmosphere_manifest.json",
             "TOPOGRAPHY/jishishan_cop30/GAMMA/jishishan_cop30.dem",
             "TOPOGRAPHY/jishishan_cop30/GAMMA/jishishan_cop30.dem.par",
-            "S1/ASCENDING_128/GAMMA/GEOCODING/lookup_table",
-            "S1/ASCENDING_128/GAMMA/GEOCODING/demcrop.dem",
-            "S1/ASCENDING_128/GAMMA/GEOCODING/demcrop.dem_par",
-            "S1/ASCENDING_128/GAMMA/BASELINE/image_pairs_SBAS",
+            "S1/ASCENDING_128/GAMMA_mb/BASELINE/image_pairs_SBAS",
         ):
             path = root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -107,45 +104,48 @@ class ConfigExampleTests(unittest.TestCase):
 
             self.assertEqual(baseline.name, "main")
             self.assertEqual(baseline.case_id, "S1/ASCENDING_128")
-            self.assertIn("SUBSET", baseline.registered_stack.parts)
+            method = root / "S1/ASCENDING_128/GAMMA_mb"
+            self.assertEqual(
+                baseline.registered_stack,
+                root / "S1/ASCENDING_128/GAMMA/RSLC/SUBSET/registered_stack.json",
+            )
+            self.assertEqual(interferogram.registered_stack, baseline.registered_stack)
             self.assertEqual(
                 baseline.output_dir,
-                root / "S1/ASCENDING_128/GAMMA/BASELINE",
+                method / "BASELINE",
             )
             self.assertEqual(interferogram.name, "main")
             self.assertEqual(interferogram.case_id, "S1/ASCENDING_128")
             self.assertEqual(
                 interferogram.geocoding.output_dir,
-                root / "S1/ASCENDING_128/GAMMA/GEOCODING",
+                method / "GEOCODING",
             )
             self.assertEqual(
                 interferogram.visualization_dir,
-                root / "S1/ASCENDING_128/GAMMA/FIGURES/INTF",
+                method / "FIGURES/INTF",
             )
             self.assertEqual(
                 interferogram.output_dir,
-                root / "S1/ASCENDING_128/GAMMA/INTF",
-            )
-            self.assertEqual(
-                interferogram.geocoding.output_dir,
-                root / "S1/ASCENDING_128/GAMMA/GEOCODING",
+                method / "INTF",
             )
             self.assertFalse((root / "S1/ASCENDING_128/LOG").exists())
             self.assertEqual(
                 [case.output_dir for case in filtering],
                 [
-                    root / f"S1/ASCENDING_128/GAMMA/FILTERING/{method}"
-                    for method in ("NL_INSAR", "GAMMA_BM3D", "GAMMA_ADF")
+                    method / "FILTERING" / filter_method
+                    for filter_method in ("NL_INSAR", "GAMMA_BM3D", "GAMMA_ADF")
                 ],
             )
             self.assertEqual(
-                mcf.output_dir, root / "S1/ASCENDING_128/GAMMA/UNW/GAMMA_MCF"
+                mcf.output_dir, method / "UNW/GAMMA_MCF"
             )
             self.assertEqual(
                 quad.output_dir,
-                root / "S1/ASCENDING_128/GAMMA/DETRENDING/GAMMA_QUAD",
+                method / "DETRENDING/GAMMA_QUAD",
             )
-            self.assertGreaterEqual(len(atmosphere), 1)
+            self.assertEqual(
+                atmosphere[0].output_dir, method / "ATMOSPHERE/GAMMA_ATM_MOD_2D_AUTO"
+            )
             self.assertEqual(
                 dinsar.output_dir,
                 root / "S1/ASCENDING_128/GAMMA_mb/TIMESERIES/DINSAR",
@@ -178,22 +178,22 @@ class ConfigExampleTests(unittest.TestCase):
         combined = baseline + interferogram + geocoding + filtering + mcf
 
         self.assertIn("project = S1/ASCENDING_128", baseline)
-        self.assertIn("processing_root = S1/ASCENDING_128/GAMMA", combined)
+        self.assertIn("processing_root = S1/ASCENDING_128/GAMMA_mb\n", combined)
         self.assertIn("RSLC/SUBSET", combined)
         self.assertIn("output_dir/MLI", interferogram)
         self.assertIn("output_dir/PAIRS", interferogram)
-        self.assertIn("GAMMA/GEOCODING", geocoding)
+        self.assertIn("GAMMA_mb/GEOCODING", geocoding)
         self.assertIn(
-            "figure_dir = S1/ASCENDING_128/GAMMA/FIGURES/INTF",
+            "figure_dir = S1/ASCENDING_128/GAMMA_mb/FIGURES/INTF",
             interferogram,
         )
         for method in ("NL_INSAR", "GAMMA_BM3D", "GAMMA_ADF"):
             self.assertIn(
-                f"figure_dir = S1/ASCENDING_128/GAMMA/FIGURES/FILTERING/{method}",
+                f"figure_dir = S1/ASCENDING_128/GAMMA_mb/FIGURES/FILTERING/{method}",
                 filtering,
             )
         self.assertIn(
-            "figure_dir = S1/ASCENDING_128/GAMMA/FIGURES/UNW/GAMMA_MCF",
+            "figure_dir = S1/ASCENDING_128/GAMMA_mb/FIGURES/UNW/GAMMA_MCF",
             mcf,
         )
         self.assertIn(".mli.bmp", interferogram)
@@ -230,7 +230,8 @@ class ConfigExampleTests(unittest.TestCase):
                 self.assertIn("INPUTS / 输入", text)
                 self.assertIn("OUTPUTS / 输出", text)
                 self.assertIn("DOWNSTREAM / 下游", text)
-                self.assertIn("REUSE / 复用", text)
+                self.assertIn("RERUN / 重跑", text)
+                self.assertNotIn("REUSE / 复用", text)
 
 
 if __name__ == "__main__":

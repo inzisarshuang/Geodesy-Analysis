@@ -160,7 +160,7 @@ class GammaAtmosphereRunnerTests(unittest.TestCase):
             self.assertEqual(len(failed), 1)
             self.assertTrue(any(path.stat().st_size for path in failed[0].glob("*.log")))
 
-    def test_matching_output_skips_and_changed_parameters_are_rejected(self) -> None:
+    def test_matching_output_and_changed_parameters_are_recomputed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             plan = self._plan(Path(directory), "gamma_atm_mod_2d_auto")
             run_gamma_atmosphere(
@@ -170,17 +170,19 @@ class GammaAtmosphereRunnerTests(unittest.TestCase):
             summary = run_gamma_atmosphere(
                 plan, command_runner=fake, progress_sink=lambda _: None
             )
-            self.assertEqual(summary.status, "skipped")
-            self.assertEqual(fake.calls, [])
+            self.assertEqual(summary.status, "complete")
+            self.assertTrue(fake.calls)
             changed_case = replace(plan.case, fit_window_range=64)
-            with self.assertRaisesRegex(RuntimeError, "signature changed"):
-                run_gamma_atmosphere(
-                    replace(plan, case=changed_case),
-                    command_runner=_FakeGamma(),
-                    progress_sink=lambda _: None,
-                )
+            changed_fake = _FakeGamma()
+            changed_summary = run_gamma_atmosphere(
+                replace(plan, case=changed_case),
+                command_runner=changed_fake,
+                progress_sink=lambda _: None,
+            )
+            self.assertEqual(changed_summary.status, "complete")
+            self.assertTrue(changed_fake.calls)
 
-    def test_missing_quicklook_is_repaired_without_science_commands(self) -> None:
+    def test_missing_quicklook_triggers_full_recomputation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             plan = self._plan(Path(directory), "gamma_atm_mod_2d_auto")
             run_gamma_atmosphere(
@@ -194,8 +196,8 @@ class GammaAtmosphereRunnerTests(unittest.TestCase):
             summary = run_gamma_atmosphere(
                 plan, command_runner=fake, progress_sink=lambda _: None
             )
-            self.assertEqual(summary.status, "figures_repaired")
-            self.assertEqual([call[0] for call in fake.calls], ["rasdt_pwr"])
+            self.assertEqual(summary.status, "complete")
+            self.assertIn("atm_mod_2d", [call[0] for call in fake.calls])
             self.assertEqual(science.read_bytes(), content)
             self.assertTrue(missing.is_file())
 

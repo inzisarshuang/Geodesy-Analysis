@@ -88,7 +88,7 @@ CFG 使用 PRE 的 `[project]`、`[defaults]` 和 `[case:name]` 结构。`name` 
 需要基线图时，运行 Geodesy-Visualization 的独立入口：
 
 ```bash
-geodesy-visualization-insar-baseline \
+geodesy-visualization baseline_plot \
   --config PROJECT/config/visualization/baseline_plot.cfg \
   --case ascending
 ```
@@ -115,17 +115,21 @@ geodesy-analysis-gamma-interferogram \
 - `baseline_manifest`：上一阶段发布的结果清单；
 - `polarization`：必须与基线阶段一致；
 - `range_looks`、`azimuth_looks`：干涉图和 MLI 的视数；
-- `radar_height`：与当前 RSLC 及上述视数完全匹配的雷达坐标高程；
+- `geocoding_config`：指向独立地理编码 CFG，其中配置 DEM、DEM 参数文件和几何输出目录；
 - `spectral_filter`：`auto`、`on` 或 `off`。`auto` 对 Sentinel-1 解析为
   `off`，其他传感器解析为 `on`，解析结果写入 provenance；
-- `output_dir`：本阶段独立输出目录。
+- `output_dir`：干涉科学产品目录；`visualization_dir` 保存干涉图、相干性和 MLI BMP；
+  GEO CFG 的 `output_dir` 集中保存地理编码几何产品。三类目录均可使用项目相对路径
+  或任意绝对路径。
 
 高级参数保留在 `[defaults]` 中并逐项注释，包括 `create_offset` 的初始偏移、
 窗口、搜索范围、相关阈值，以及 `cc_wave` 的距离向和方位向窗口。默认值保持旧
 生产脚本行为，用户通常不需要修改。
 
-`radar_height` 必须显式填写，不根据文件名猜测。程序用 MLI 行列数和文件字节数
-检查其网格是否匹配；裁剪 RSLC 必须使用同步裁剪或重新生成的雷达坐标高程。
+干涉阶段从当前参考 MLI 调用地理编码程序，并严格校验生成的 WGS84 radar height
+字节数与该次 MLI 行列数匹配。地理编码输出目录由独立 CFG 指定，GEO 相关文件集中保存在
+此目录；GAMMA DISP 的干涉图、相干性和 MLI BMP 仍写入 Visualization。科学、GEO 与
+Visualization 三个目录在全部产物验证成功后一起原子替换，失败则保留旧结果。
 
 ## 5. 数据流
 
@@ -205,13 +209,15 @@ S1/ASCENDING_128/LOG/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA/
 
 ## 7. 重跑、失败与发布
 
-- 输入和参数摘要一致且结果清单完整时，整阶段返回 `skipped`；
-- 已有输出目录缺少结果清单、清单损坏或摘要不同，程序停止并说明冲突，不静默
-  覆盖；
-- 输出先写入同一文件系统中的 staging 目录，所有核心产物检查通过后再原子发布；
-- 失败时不发布正式结果，保留独立的 `*.failed-logs-<编号>` 供排错；
+- 每次运行都重新计算，不因已有输出、摘要或清单状态跳过或冲突；
+- Analysis 与 Visualization 分别写入同一文件系统的 staging 目录，所有产物验证后
+  一起替换旧目录；
+- 计算或发布失败时不丢失旧结果，保留独立的 `*.failed-logs-<编号>` 供排错；
 - 输入 RSLC、参数文件、基线清单和雷达高程始终只读；
 - `--dry-run` 只校验并打印解析后的计划，不建立分析产品。
+
+配置包含多个 `[case:name]` 时，指定 `--case name` 只解析、校验和执行该 case；
+其他 case 的路径或参数错误不会阻塞当前运行。
 
 ## 8. 验证
 
@@ -223,7 +229,8 @@ S1/ASCENDING_128/LOG/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA/
 - 基线清单与 Visualization 独立绘图边界；
 - Sentinel-1 与其他传感器的频谱滤波解析；
 - MLI 去重、逐对命令顺序、错误停止、失败日志保留和原子发布；
-- 相同输入跳过、不同输入冲突；
+- 基线每次重算，成功后原子替换旧结果，失败时保留旧结果；
+- 干涉阶段每次重算，成功后一起替换科学产物与可视化产物，失败时保留旧结果；
 - CLI `--dry-run` 和退出码。
 
 集成验证分两层：先在 `envInSAR` 用伪小文件验证安装后的入口和日志，再选择一个

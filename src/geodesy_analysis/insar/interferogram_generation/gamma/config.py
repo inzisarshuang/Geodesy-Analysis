@@ -311,36 +311,11 @@ def load_gamma_interferogram_config(
         paths = bind_analysis_case(root, name, project_value, processing_value)
         layout = AnalysisProductLayout(paths) if processing_value is not None else None
         registered_stack = resolve_case_input(paths, values["registered_stack"])
-        expected_stacks = (
-            {
-                layout.product("RSLC", "registered_stack.json").resolve(),
-                layout.product("RSLC", "SUBSET", "registered_stack.json").resolve(),
-            }
-            if layout is not None
-            else {
-                (paths.case_root / "PRE/GAMMA/RSLC/registered_stack.json").resolve(),
-                (paths.case_root / "PRE/GAMMA/RSLC_SUBSET/registered_stack.json").resolve(),
-            }
-        )
-        if registered_stack not in expected_stacks:
-            raise ValueError(
-                f"{source}: registered_stack must be a canonical case PRE input: "
-                f"{', '.join(str(path) for path in sorted(expected_stacks))}"
-            )
+        if not registered_stack.is_file():
+            raise ValueError(f"{source}: registered_stack must be a file: {registered_stack}")
         baseline_manifest = resolve_case_input(paths, values["baseline_manifest"])
-        expected_baseline = (
-            layout.product("BASELINE", "baseline_manifest.json").resolve()
-            if layout is not None
-            else (
-                paths.case_root
-                / "ANALYSIS/BASELINE_SELECTION/GAMMA/baseline_manifest.json"
-            ).resolve()
-        )
-        if baseline_manifest != expected_baseline:
-            raise ValueError(
-                f"{source}: baseline_manifest must be the canonical baseline input: "
-                f"{expected_baseline}"
-            )
+        if not baseline_manifest.is_file():
+            raise ValueError(f"{source}: baseline_manifest must be a file: {baseline_manifest}")
         geocoding = _load_geocoding_config(
             resolve_project_input(paths, values["geocoding_config"]),
             paths=paths,

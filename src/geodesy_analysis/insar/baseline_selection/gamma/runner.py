@@ -10,8 +10,7 @@ from pathlib import Path
 
 from geodesy_analysis.common.command import SubprocessCommandRunner
 from geodesy_analysis.common.progress import emit_progress
-from geodesy_analysis.common.reuse import ReuseState, classify_analysis_output
-from geodesy_analysis.io import atomic_output_directory
+from geodesy_analysis.io import atomic_replace_output_directory
 
 from .models import GammaBaselinePlan
 from .publication import (
@@ -88,58 +87,6 @@ def run_gamma_baseline(
     if not isinstance(plan, GammaBaselinePlan):
         raise TypeError("plan must be GammaBaselinePlan")
     signature = baseline_input_signature(plan)
-    reuse = classify_analysis_output(
-        plan.case.output_dir, "baseline_manifest.json", signature
-    )
-    if reuse.state is ReuseState.COMPLETE:
-        manifest = reuse.manifest or {}
-        expected_identity = {
-            "backend": {"name": "gamma"},
-            "case_id": plan.case.case_id,
-            "network_type": plan.case.network_type,
-            "image_pairs_path": f"image_pairs_{plan.case.network_type}",
-            "network_path": f"baseline_select_{plan.case.network_type}",
-            "polarization": plan.case.polarization,
-            "registered_stack_project_path": _project_path(
-                plan, plan.case.registered_stack
-            ),
-            "stack_digest": plan.stack.source_digest,
-        }
-        inconsistent = [
-            key
-            for key, value in expected_identity.items()
-            if manifest.get(key) != value
-        ]
-        network = plan.case.output_dir / f"baseline_select_{plan.case.network_type}"
-        pair_count = sum(
-            1
-            for line in network.read_text(
-                encoding="utf-8", errors="replace"
-            ).splitlines()
-            if line.strip() and not line.lstrip().startswith("#")
-        )
-        if manifest.get("pair_count") != pair_count:
-            inconsistent.append("pair_count")
-        if inconsistent:
-            raise RuntimeError(
-                "baseline manifest identity is inconsistent: "
-                + ", ".join(inconsistent)
-                + f". Existing science was not modified: {plan.case.output_dir}"
-            )
-        _event(
-            progress_sink,
-            event="batch_finished",
-            status="skipped",
-            total=2,
-            stage="reuse",
-        )
-        return BaselineRunSummary(
-            status="skipped",
-            pair_count=int(manifest.get("pair_count", 0)),
-            output_dir=plan.case.output_dir,
-        )
-    if reuse.state is not ReuseState.ABSENT:
-        raise RuntimeError(reuse.guidance)
     log_dir = (
         plan.case.paths.processing_root / "LOG/ANALYSIS/BASELINE"
         if plan.case.paths.processing_root is not None
@@ -157,7 +104,7 @@ def run_gamma_baseline(
         stage="prepare",
     )
     try:
-        with atomic_output_directory(plan.case.output_dir) as staging:
+        with atomic_replace_output_directory(plan.case.output_dir) as staging:
             (staging / "images").write_text(plan.images_text, encoding="utf-8")
             (staging / "SLC_tab").write_text(plan.slc_tab_text, encoding="utf-8")
             _event(

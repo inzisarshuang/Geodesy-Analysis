@@ -13,13 +13,12 @@ import numpy as np
 
 from geodesy_analysis.common.command import SubprocessCommandRunner
 from geodesy_analysis.common.progress import emit_progress
-from geodesy_analysis.common.reuse import ReuseState, classify_analysis_output
 from geodesy_analysis.insar.common.gamma_quicklooks import (
     require_nonempty_quicklook,
     unwrapped_phase_quicklook_command,
 )
 from geodesy_analysis.insar.masking import coherence_mask, write_mask
-from geodesy_analysis.io import atomic_output_directories
+from geodesy_analysis.io import atomic_replace_output_directories
 
 from .models import GammaQuadDetrendPlan, GammaQuadPair
 from .publication import quad_detrend_input_signature
@@ -171,51 +170,6 @@ def run_gamma_quad_detrend(
         if plan.case.paths.processing_root is not None
         else plan.case.case_root / "LOG/ANALYSIS/DETRENDING/GAMMA_QUAD"
     )
-    reuse = classify_analysis_output(
-        plan.case.output_dir, "detrending_manifest.json", signature
-    )
-    if reuse.science_reusable:
-        manifest = reuse.manifest or {}
-        expected_identity = {
-            "case_id": plan.case.case_id,
-            "method": "gamma_quad_detrending",
-            "pair_count": len(plan.pairs),
-            "unwrapping_manifest_digest": plan.unwrapping_manifest_digest,
-        }
-        if any(manifest.get(key) != value for key, value in expected_identity.items()):
-            raise RuntimeError(
-                f"detrending manifest identity is inconsistent; existing science was not modified: {plan.case.output_dir}"
-            )
-        if reuse.state is ReuseState.FIGURES_MISSING:
-            _begin_logs(log_dir)
-            for pair in plan.pairs:
-                _render_quicklook(
-                    plan,
-                    pair,
-                    plan.case.output_dir / "pairs" / pair.name / "pair.quad.unw",
-                    destination=plan.case.visualization_dir,
-                    delegate=delegate,
-                    log_dir=log_dir,
-                )
-            status = "figures_repaired"
-        else:
-            status = "skipped"
-        sink(
-            emit_progress(
-                task=_TASK,
-                event="batch_finished",
-                status=status,
-                stage="reuse",
-                total=len(plan.pairs),
-            )
-        )
-        return GammaQuadDetrendRunSummary(status, len(plan.pairs), plan.case.output_dir)
-    if reuse.state is not ReuseState.ABSENT:
-        raise RuntimeError(reuse.guidance)
-    if plan.case.visualization_dir.exists() or plan.case.visualization_dir.is_symlink():
-        raise RuntimeError(
-            "detrending science is absent but figure output already exists; inspect and delete the incomplete output group"
-        )
     _begin_logs(log_dir)
     total = len(plan.pairs)
     _event = lambda **values: sink(
@@ -223,7 +177,7 @@ def run_gamma_quad_detrend(
     )
     expected_size = plan.width * plan.lines * 4
     try:
-        with atomic_output_directories(
+        with atomic_replace_output_directories(
             plan.case.visualization_dir, plan.case.output_dir
         ) as (visual_staging, staging):
             pairs_dir = staging / "pairs"

@@ -24,7 +24,7 @@ geodesy_analysis.insar.timeseries
     ``discover_gamma_mb_result``:
         检查 MB 结果目录并建立 TPF、基线网络与日期之间的对应关系。
     ``target_regions_from_config``:
-        读取与 PyGMT-Plotter 相同格式的目标区域配置。
+        读取与 Geodesy-Visualization 相同格式的目标区域配置。
     ``phase_to_los_displacement``:
         将解缠相位转换为带符号的 LOS 形变。
     ``temporal_reference_index``:
@@ -373,7 +373,7 @@ def target_regions_from_config(
     config: Mapping[str, str],
 ) -> Dict[str, Tuple[float, float, float, float]]:
     """
-    从配置字典读取与 PyGMT-Plotter 共用的目标区域。
+    从配置字典读取与 Geodesy-Visualization 共用的目标区域。
 
     参数:
         config:

@@ -54,7 +54,7 @@ Geodesy-Analysis/
 下载数据、生成 SLC 或配准影像。
 
 1. `geodesy-analysis-gamma-baseline` 生成 DSI、SBAS 或 PSI 网络及基线清单。
-2. `geodesy-visualization-insar-baseline` 读取基线清单并生成网络图；该命令属于
+2. `geodesy-visualization baseline_plot` 读取基线清单并生成网络图；该命令属于
    Geodesy-Visualization，在 `envPlot` 中运行。
 3. `geodesy-analysis-gamma-interferogram` 按网络生成 MLI、差分干涉图和相干性。
 4. `geodesy-analysis-filtering` 从干涉清单选择方法并发布统一滤波清单。
@@ -99,7 +99,7 @@ Geodesy-Analysis/
 从仓库 `config/GAMMA_mb/` 复制或直接参考所需 CFG，使用 `--dry-run` 检查，再正式
 生成基线。随后修改 `gamma_interferogram.cfg`，用同样方式检查和
 运行干涉阶段。如需基线图，使用 Geodesy-Visualization 的
-`config_examples/visualization/baseline_plot.cfg`。CFG 的 `[project] root` 决定全部相对路径，
+`config_examples/baseline_plot/baseline_plot.cfg`。CFG 的 `[project] root` 决定全部相对路径，
 与终端当前目录无关。每个 `[case:main]` 还必须声明类似
 `case_root = S1/ASCENDING_128` 的正式 case 路径；`main` 只是 CLI 选择标签，不参与
 目录命名。
@@ -116,7 +116,12 @@ geodesy-analysis-gamma-mb --config /absolute/PROJECT/config/GAMMA_mb/gamma_sbas_
 
 ## 6. Data And Output Behavior / 数据与输出行为
 
-- PRE 输入：`<processing_root>/RSLC/registered_stack.json` 或 `RSLC/SUBSET/registered_stack.json`
+例如，`S1/ASCENDING_128/GAMMA/` 提供公共 SLC、RSLC 和配准几何；
+`S1/ASCENDING_128/GAMMA_mb/` 是分析 CFG 声明的 `processing_root`。MintPy、
+DSInSAR、StaMPS 等路线可在同一 case 下建立自己的目录，并通过 CFG 引用兼容的既有产品。
+
+- PRE 输入：`registered_stack` 指向公共 `GAMMA/RSLC/registered_stack.json` 或
+  `GAMMA/RSLC/SUBSET/registered_stack.json`
 - 基线结果：`<processing_root>/BASELINE/`
 - 干涉结果：`<processing_root>/INTF/`，内部使用 `MLI/` 与
   `PAIRS/<日期对>/`
@@ -128,9 +133,10 @@ geodesy-analysis-gamma-mb --config /absolute/PROJECT/config/GAMMA_mb/gamma_sbas_
 - 日志：`<processing_root>/LOG/ANALYSIS/<STAGE>/`
 - 质检图：`<processing_root>/FIGURES/{INTF,FILTERING,UNW,DETRENDING}/...`
 
-只有清单和所有核心文件通过检查后才发布正式目录。完整且签名一致的结果直接跳过；
-只缺质检图时仅补图，不重跑科学命令。残缺结果或签名变化不会自动覆盖，用户检查后
-删除对应结果目录或指定新的 `output_dir` 再运行。干涉科学、GEO 和快视图输出均可在 CFG 中指定
+只有清单和所有核心文件通过检查后才发布正式目录。每次正式调用都会重新执行科学
+命令；新结果完整通过验证后事务替换旧目录，计算或发布失败时恢复旧结果。输入签名
+与全部参数继续写入 manifest/provenance 用于比较，但不参与跳过或阻止运行。若需同时
+保留两组结果，用户可指定不同的 `output_dir`。干涉科学、GEO 和快视图输出均可在 CFG 中指定
 项目相对路径或任意绝对路径。新写出的 Analysis 清单使用 schema v2；项目内路径采用
 相对形式，外部输出路径记录为绝对形式。迁移期读端继续接受 schema v1。上述 GAMMA DISP BMP 是各科学阶段拥有的
 原生质量检查图，按阶段/方法平铺。Geodesy-Visualization 继续负责基线网络图、

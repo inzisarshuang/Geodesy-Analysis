@@ -222,6 +222,18 @@ generate_geocoded_displacement = true
             self.assertEqual(manifest["displacement"]["quantity"], "cumulative_los_displacement")
             self.assertEqual(manifest["displacement"]["units"], "meter")
             self.assertEqual(manifest["epoch_count"], 3)
+            dates_file = plan.case.output_dir / "images"
+            self.assertEqual(dates_file.read_text().splitlines(), manifest["epochs"])
+            self.assertIn("images", manifest["required_products"])
+            for table, field in (
+                ("DISPLACEMENT/displacement_tab", "paths"),
+                ("DISPLACEMENT_GEO/displacement_geo_tab", "geocoded_paths"),
+            ):
+                tab = plan.case.output_dir / table
+                paths = [(tab.parent / line).resolve() for line in tab.read_text().splitlines()]
+                expected = [plan.case.output_dir / path for path in manifest["displacement"][field]]
+                self.assertEqual(paths, expected)
+                self.assertTrue(all(path.is_file() for path in paths))
 
     def test_failures_reuse_mismatch_and_quicklook_repair(self) -> None:
         for program in ("mb", "mk_geo_data_all"):
@@ -240,18 +252,22 @@ generate_geocoded_displacement = true
             _, cfg = self._config(Path(directory))
             plan = build_gamma_mb_plan(load_gamma_mb_config(cfg)[0])
             run_gamma_mb(plan, command_runner=_FakeGamma(), progress_sink=lambda _: None)
-            skipped = _FakeGamma()
+            repeated = _FakeGamma()
             self.assertEqual(
-                run_gamma_mb(plan, command_runner=skipped, progress_sink=lambda _: None).status,
-                "skipped",
+                run_gamma_mb(plan, command_runner=repeated, progress_sink=lambda _: None).status,
+                "complete",
             )
-            self.assertEqual(skipped.calls, [])
-            with self.assertRaisesRegex(RuntimeError, "signature changed"):
+            self.assertTrue(repeated.calls)
+            changed = _FakeGamma()
+            self.assertEqual(
                 run_gamma_mb(
                     replace(plan, case=replace(plan.case, gamma=0.8)),
-                    command_runner=_FakeGamma(),
+                    command_runner=changed,
                     progress_sink=lambda _: None,
-                )
+                ).status,
+                "complete",
+            )
+            self.assertTrue(changed.calls)
             science = plan.case.output_dir / "mean_los_velocity"
             before = science.read_bytes()
             missing = plan.case.figure_dir / "mean_los_velocity.radar.bmp"
@@ -259,9 +275,9 @@ generate_geocoded_displacement = true
             repair = _FakeGamma()
             self.assertEqual(
                 run_gamma_mb(plan, command_runner=repair, progress_sink=lambda _: None).status,
-                "figures_repaired",
+                "complete",
             )
-            self.assertEqual([call[0] for call in repair.calls], ["rasdt_pwr"])
+            self.assertIn("mb", [call[0] for call in repair.calls])
             self.assertEqual(science.read_bytes(), before)
 
 

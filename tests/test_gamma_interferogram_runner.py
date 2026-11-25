@@ -532,7 +532,7 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
                 self.assertEqual(len(failures), 1)
                 self.assertTrue(any(path.stat().st_size for path in failures[0].glob("*.log")))
 
-    def test_complete_output_skips_without_invoking_science_commands(self) -> None:
+    def test_failed_explicit_rerun_preserves_all_previous_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root)
@@ -550,13 +550,13 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
             ).read_bytes()
 
             fake = _FakeGamma(fail_program="SLC_intf")
-            summary = run_gamma_interferograms(
-                plan,
-                command_runner=fake,
-                progress_sink=lambda _: None,
-            )
-            self.assertEqual(summary.status, "skipped")
-            self.assertEqual(fake.calls, [])
+            with self.assertRaisesRegex(RuntimeError, "SLC_intf"):
+                run_gamma_interferograms(
+                    plan,
+                    command_runner=fake,
+                    progress_sink=lambda _: None,
+                )
+            self.assertTrue(fake.calls)
 
             self.assertEqual(
                 (plan.case.output_dir / "interferogram_manifest.json").read_bytes(),
@@ -574,7 +574,7 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
                 old_height,
             )
 
-    def test_existing_output_is_skipped_and_changed_parameters_are_rejected(self) -> None:
+    def test_existing_output_and_changed_parameters_are_recomputed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root)
@@ -590,19 +590,19 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
                 command_runner=second,
                 progress_sink=lambda _: None,
             )
-            self.assertEqual(summary.status, "skipped")
-            self.assertEqual(second.calls, [])
+            self.assertEqual(summary.status, "complete")
+            self.assertTrue(second.calls)
 
             changed_case = replace(plan.case, coherence_range_window=11)
             changed_plan = replace(plan, case=changed_case)
             changed_runner = _FakeGamma()
-            with self.assertRaisesRegex(RuntimeError, "signature changed"):
-                run_gamma_interferograms(
-                    changed_plan,
-                    command_runner=changed_runner,
-                    progress_sink=lambda _: None,
-                )
-            self.assertEqual(changed_runner.calls, [])
+            changed_summary = run_gamma_interferograms(
+                changed_plan,
+                command_runner=changed_runner,
+                progress_sink=lambda _: None,
+            )
+            self.assertEqual(changed_summary.status, "complete")
+            self.assertTrue(changed_runner.calls)
 
     def test_publishes_science_geometry_and_quicklooks_to_absolute_paths(self) -> None:
         with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as external:
@@ -640,7 +640,7 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
             self.assertTrue((output_root / "quicklooks/ave_mli.bmp").is_file())
             self.assertTrue((output_root / "geometry/20231226.VV.wgs84.hgt").is_file())
 
-    def test_legacy_schema_one_output_is_rejected(self) -> None:
+    def test_legacy_schema_one_output_is_replaced(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root)
@@ -667,13 +667,15 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
             provenance_path.write_text(json.dumps(provenance), encoding="utf-8")
 
             fake = _FakeGamma()
-            with self.assertRaisesRegex(RuntimeError, "schema is not version 2"):
-                run_gamma_interferograms(
-                    plan, command_runner=fake, progress_sink=lambda _: None
-                )
-            self.assertEqual(fake.calls, [])
+            summary = run_gamma_interferograms(
+                plan, command_runner=fake, progress_sink=lambda _: None
+            )
+            self.assertEqual(summary.status, "complete")
+            self.assertTrue(fake.calls)
+            replacement = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(replacement["schema_version"], 2)
 
-    def test_legacy_schema_one_with_unmatched_signature_is_rejected(self) -> None:
+    def test_legacy_schema_one_with_unmatched_signature_is_replaced(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root)
@@ -703,27 +705,27 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
             provenance = {"input_signature": "unrecoverable-legacy-signature"}
             provenance_path.write_text(json.dumps(provenance), encoding="utf-8")
             fake = _FakeGamma()
-            with self.assertRaisesRegex(RuntimeError, "schema is not version 2"):
-                run_gamma_interferograms(
-                    plan, command_runner=fake, progress_sink=lambda _: None
-                )
-            self.assertEqual(fake.calls, [])
+            summary = run_gamma_interferograms(
+                plan, command_runner=fake, progress_sink=lambda _: None
+            )
+            self.assertEqual(summary.status, "complete")
+            self.assertTrue(fake.calls)
 
-    def test_incomplete_existing_output_is_rejected(self) -> None:
+    def test_incomplete_existing_output_is_replaced(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root)
             plan.case.output_dir.mkdir(parents=True)
             (plan.case.output_dir / "partial").write_text("stale", encoding="utf-8")
             fake = _FakeGamma()
-            with self.assertRaisesRegex(RuntimeError, "completion manifest is missing"):
-                run_gamma_interferograms(
-                    plan, command_runner=fake, progress_sink=lambda _: None
-                )
-            self.assertTrue((plan.case.output_dir / "partial").exists())
-            self.assertEqual(fake.calls, [])
+            summary = run_gamma_interferograms(
+                plan, command_runner=fake, progress_sink=lambda _: None
+            )
+            self.assertEqual(summary.status, "complete")
+            self.assertFalse((plan.case.output_dir / "partial").exists())
+            self.assertTrue(fake.calls)
 
-    def test_existing_manifest_with_wrong_pair_identity_is_rejected(self) -> None:
+    def test_existing_manifest_with_wrong_pair_identity_is_replaced(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root)
@@ -737,13 +739,14 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
             manifest["pairs"][0]["pair"] = "20000101-20000102"
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
             fake = _FakeGamma()
-            with self.assertRaisesRegex(RuntimeError, "identity is inconsistent"):
-                run_gamma_interferograms(
-                    plan, command_runner=fake, progress_sink=lambda _: None
-                )
-            self.assertEqual(fake.calls, [])
+            summary = run_gamma_interferograms(
+                plan, command_runner=fake, progress_sink=lambda _: None
+            )
+            self.assertEqual(summary.status, "complete")
+            repaired = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertNotEqual(repaired["pairs"][0]["pair"], "20000101-20000102")
 
-    def test_existing_manifest_with_changed_identity_is_rejected(self) -> None:
+    def test_existing_manifest_with_changed_identity_is_replaced(self) -> None:
         mutations = (
             ("case_id", "S1/DESCENDING_135"),
             (
@@ -771,13 +774,14 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
                 manifest[key] = value
                 manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
                 fake = _FakeGamma()
-                with self.assertRaisesRegex(RuntimeError, "identity is inconsistent"):
-                    run_gamma_interferograms(
-                        plan, command_runner=fake, progress_sink=lambda _: None
-                    )
-                self.assertEqual(fake.calls, [])
+                summary = run_gamma_interferograms(
+                    plan, command_runner=fake, progress_sink=lambda _: None
+                )
+                self.assertEqual(summary.status, "complete")
+                repaired = json.loads(manifest_path.read_text(encoding="utf-8"))
+                self.assertNotEqual(repaired[key], value)
 
-    def test_missing_figure_directory_repairs_only_figures(self) -> None:
+    def test_missing_figure_directory_triggers_full_recomputation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root)
@@ -806,12 +810,11 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
                 plan, command_runner=fake, progress_sink=lambda _: None
             )
 
-            self.assertEqual(summary.status, "figures_repaired")
+            self.assertEqual(summary.status, "complete")
             programs = [call["argv"][0] for call in fake.calls]
-            self.assertNotIn("multi_look", programs)
-            self.assertTrue(set(programs) <= {"raspwr", "rasmph", "rasdt_pwr"})
+            self.assertIn("multi_look", programs)
 
-    def test_partial_visualization_repairs_missing_file_and_preserves_unrelated(self) -> None:
+    def test_partial_visualization_is_replaced_by_full_recomputation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root)
@@ -827,12 +830,12 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
             summary = run_gamma_interferograms(
                 plan, command_runner=fake, progress_sink=lambda _: None
             )
-            self.assertEqual(summary.status, "figures_repaired")
+            self.assertEqual(summary.status, "complete")
             self.assertGreater(len(fake.calls), 0)
-            self.assertTrue(unrelated.exists())
+            self.assertFalse(unrelated.exists())
             self.assertTrue(missing.is_file())
 
-    def test_partial_expected_inventory_is_rebuilt_without_science_commands(self) -> None:
+    def test_partial_expected_inventory_is_rebuilt_with_science_commands(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root)
@@ -847,8 +850,8 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
                 plan, command_runner=fake, progress_sink=lambda _: None
             )
 
-            self.assertEqual(summary.status, "figures_repaired")
-            self.assertNotIn("multi_look", [call["argv"][0] for call in fake.calls])
+            self.assertEqual(summary.status, "complete")
+            self.assertIn("multi_look", [call["argv"][0] for call in fake.calls])
             self.assertGreater(missing.stat().st_size, 0)
 
     def test_expected_quicklook_symlink_is_replaced_without_following_it(self) -> None:
@@ -867,11 +870,11 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
             summary = run_gamma_interferograms(
                 plan, command_runner=_FakeGamma(), progress_sink=lambda _: None
             )
-            self.assertEqual(summary.status, "figures_repaired")
+            self.assertEqual(summary.status, "complete")
             self.assertFalse(target.is_symlink())
             self.assertEqual(outside.read_bytes(), b"external")
 
-    def test_complete_output_does_not_enter_science_publication(self) -> None:
+    def test_publication_failure_restores_all_previous_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root)
@@ -897,13 +900,12 @@ class GammaInterferogramRunnerTests(unittest.TestCase):
             with patch(
                 "geodesy_analysis.io.os.replace",
                 side_effect=fail_science_publication,
-            ):
-                summary = run_gamma_interferograms(
+            ), self.assertRaisesRegex(OSError, "synthetic science publication failure"):
+                run_gamma_interferograms(
                     plan,
                     command_runner=_FakeGamma(),
                     progress_sink=lambda _: None,
                 )
-            self.assertEqual(summary.status, "skipped")
 
             self.assertEqual(
                 (plan.case.output_dir / "interferogram_manifest.json").read_bytes(),

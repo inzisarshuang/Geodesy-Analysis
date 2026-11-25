@@ -49,9 +49,11 @@ Analysis 只读取 `registered_stack.json`，不扫描 PRE 文件夹猜测影像
 目录身份。项目输入必须留在项目内，Analysis 输出与日志则必须留在正式 case 内；
 解析后的符号链接同样接受边界检查。
 
-当前 GAMMA 契约以 `<case_root>/<processing_method>` 为方法根，固定使用：
+以 `<case_root>/GAMMA` 保存公共预处理栈。各分析路线用
+`<case_root>/<processing_method>` 保存本路线生成的结果，与公共预处理目录并列。
+例如，`GAMMA_mb` 按以下方式组织：
 
-- `RSLC/registered_stack.json` 或 `RSLC/SUBSET/registered_stack.json` 作为 Analysis 输入；
+- 通过 `registered_stack` 显式读取 `GAMMA/RSLC` 或其 `SUBSET` 中的清单；
 - `BASELINE/`、`GEOCODING/` 与 `INTF/` 作为科学输出；
 - `INTF/MLI/` 与 `INTF/PAIRS/<日期对>/` 组织自有资产；
 - `LOG/ANALYSIS/<STAGE>/` 保存日志。
@@ -65,7 +67,8 @@ Analysis 只读取 `registered_stack.json`，不扫描 PRE 文件夹猜测影像
   图片按阶段/方法平铺，不建立日期对子目录。
 - `ATMOSPHERE/<METHOD>/` 保存按方法区分的大气改正结果；
   `TIMESERIES/{STACKING,DINSAR,GAMMA_MB}/` 保存速度和累计 LOS 位移，`GAMMA_MB`
-  的大体量中间时序直接写入 `INTERMEDIATE/`。
+  的大体量中间时序直接写入 `INTERMEDIATE/`。`images` 按位移表行顺序发布日期，
+  位移表中的文件引用以表所在目录为基准。
 
 仓库公开 CFG 统一位于 `config/GAMMA_mb/`。这里的目录名表示配置所属处理方法族，
 不再增加没有信息增益的 `analysis/` 中间层；项目运行时可保留默认路径，也可显式覆盖

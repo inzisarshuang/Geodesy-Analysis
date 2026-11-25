@@ -13,10 +13,9 @@ import numpy as np
 
 from geodesy_analysis.common.command import SubprocessCommandRunner
 from geodesy_analysis.common.progress import emit_progress
-from geodesy_analysis.common.reuse import ReuseState, classify_analysis_output
 from geodesy_analysis.insar.common.gamma_quicklooks import require_nonempty_quicklook
 from geodesy_analysis.insar.time_series.gamma.common import write_gamma_diff_tab
-from geodesy_analysis.io import atomic_output_directories
+from geodesy_analysis.io import atomic_replace_output_directories
 
 from .models import GammaStackingPlan
 from .publication import COMMAND_CONTRACT, gamma_stacking_input_signature
@@ -131,68 +130,14 @@ def run_gamma_stacking(
     sink = progress_sink or print
     delegate = command_runner or SubprocessCommandRunner()
     signature = gamma_stacking_input_signature(plan)
-    reuse = classify_analysis_output(
-        plan.case.output_dir,
-        "timeseries_manifest.json",
-        signature,
-        project_root=plan.case.project_root,
-    )
     reference_mli = next(
         asset for asset in plan.inputs.mli_assets if asset.date == plan.inputs.reference_date
     )
     radar_figure = plan.case.figure_dir / "mean_los_velocity.radar.bmp"
     geo_figure = plan.case.figure_dir / "mean_los_velocity.geo.bmp"
-    if reuse.science_reusable:
-        manifest = reuse.manifest or {}
-        if (
-            manifest.get("method") != "gamma_stacking"
-            or manifest.get("case_id") != plan.case.case_id
-            or manifest.get("atmosphere_manifest_digest")
-            != plan.inputs.atmosphere_manifest_digest
-        ):
-            raise RuntimeError("stacking manifest identity is inconsistent")
-        if reuse.state is ReuseState.FIGURES_MISSING:
-            _begin_logs(plan.case.log_dir)
-            if not radar_figure.is_file():
-                _render(
-                    plan,
-                    data=plan.case.output_dir / "mean_los_velocity",
-                    background=reference_mli.data,
-                    width=plan.inputs.width,
-                    output=radar_figure,
-                    delegate=delegate,
-                    stem="mean_velocity.radar",
-                )
-            if not geo_figure.is_file():
-                _render(
-                    plan,
-                    data=plan.case.output_dir / "mean_los_velocity.geo",
-                    background=plan.case.output_dir / "reference_mli.geo",
-                    width=plan.inputs.map_width,
-                    output=geo_figure,
-                    delegate=delegate,
-                    stem="mean_velocity.geo",
-                )
-            status = "figures_repaired"
-        else:
-            status = "skipped"
-        sink(
-            emit_progress(
-                task=_TASK,
-                event="batch_finished",
-                status=status,
-                stage="reuse",
-                total=len(plan.inputs.pairs),
-            )
-        )
-        return GammaStackingRunSummary(status, len(plan.inputs.pairs), plan.case.output_dir)
-    if reuse.state is not ReuseState.ABSENT:
-        raise RuntimeError(reuse.guidance)
-    if plan.case.figure_dir.exists() or plan.case.figure_dir.is_symlink():
-        raise RuntimeError("stacking science is absent but figure output already exists")
     _begin_logs(plan.case.log_dir)
     try:
-        with atomic_output_directories(
+        with atomic_replace_output_directories(
             plan.case.figure_dir, plan.case.output_dir
         ) as (figure_staging, staging):
             diff_tab = write_gamma_diff_tab(plan.inputs, staging / "diff_tab")

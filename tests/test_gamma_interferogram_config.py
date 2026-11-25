@@ -69,7 +69,7 @@ output_dir = S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA
             root = Path(directory)
             for relative in (
                 "S1/ASCENDING_128/GAMMA/RSLC/SUBSET/registered_stack.json",
-                "S1/ASCENDING_128/GAMMA/BASELINE/baseline_manifest.json",
+                "S1/ASCENDING_128/MintPy/BASELINE/baseline_manifest.json",
                 "TOPOGRAPHY/cop30/GAMMA/cop30.dem",
                 "TOPOGRAPHY/cop30/GAMMA/cop30.dem.par",
             ):
@@ -82,9 +82,9 @@ output_dir = S1/ASCENDING_128/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA
 root = {root}
 [case:ascending]
 project = S1/ASCENDING_128
-processing_root = S1/ASCENDING_128/GAMMA
+processing_root = S1/ASCENDING_128/GAMMA_mb
 registered_stack = S1/ASCENDING_128/GAMMA/RSLC/SUBSET/registered_stack.json
-baseline_manifest = S1/ASCENDING_128/GAMMA/BASELINE/baseline_manifest.json
+baseline_manifest = S1/ASCENDING_128/MintPy/BASELINE/baseline_manifest.json
 geocoding_config = config/analysis/geocoding.cfg
 polarization = VV
 range_looks = 10
@@ -103,9 +103,13 @@ dem_par = TOPOGRAPHY/cop30/GAMMA/cop30.dem.par
 
             (case,) = load_gamma_interferogram_config(config, case_name="ascending")
 
-            self.assertEqual(case.output_dir, root / "S1/ASCENDING_128/GAMMA/INTF")
-            self.assertEqual(case.geocoding.output_dir, root / "S1/ASCENDING_128/GAMMA/GEOCODING")
-            self.assertEqual(case.visualization_dir, root / "S1/ASCENDING_128/GAMMA/FIGURES/INTF")
+            self.assertEqual(
+                case.baseline_manifest, root / "S1/ASCENDING_128/MintPy/BASELINE/baseline_manifest.json"
+            )
+            method_root = root / "S1/ASCENDING_128/GAMMA_mb"
+            self.assertEqual(case.output_dir, method_root / "INTF")
+            self.assertEqual(case.geocoding.output_dir, method_root / "GEOCODING")
+            self.assertEqual(case.visualization_dir, method_root / "FIGURES/INTF")
 
     def test_loads_required_values_and_legacy_advanced_defaults(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

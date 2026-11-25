@@ -234,7 +234,7 @@ visualization_dir = S1/ASCENDING_128/VISUALIZATION/INTERFEROGRAM_GENERATION/GAMM
             "registered_stack.json",
             "geodesy-analysis-gamma-baseline",
             "baseline_manifest.json",
-            "geodesy-visualization-insar-baseline",
+            "geodesy-visualization baseline_plot",
             "geodesy-analysis-gamma-interferogram",
             "interferogram_manifest.json",
         )

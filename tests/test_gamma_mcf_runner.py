@@ -199,24 +199,24 @@ class GammaMcfRunnerTests(unittest.TestCase):
                 (visualization / f"{plan.pairs[0].name}.tflt.filt.unw.bmp").is_file()
             )
 
-    def test_complete_result_skips_and_changed_parameters_are_rejected(self) -> None:
+    def test_complete_result_and_changed_parameters_are_recomputed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root)
             run_gamma_mcf(plan, command_runner=_FakeMcf(), progress_sink=lambda _: None)
             repeated_fake = _FakeMcf()
             repeated = run_gamma_mcf(plan, command_runner=repeated_fake, progress_sink=lambda _: None)
-            self.assertEqual(repeated.status, "skipped")
-            self.assertEqual(repeated_fake.calls, [])
+            self.assertEqual(repeated.status, "complete")
+            self.assertTrue(repeated_fake.calls)
             changed = replace(plan, case=replace(plan.case, mcf_mode=1))
             changed_fake = _FakeMcf()
-            with self.assertRaisesRegex(RuntimeError, "signature changed"):
-                run_gamma_mcf(
-                    changed, command_runner=changed_fake, progress_sink=lambda _: None
-                )
-            self.assertEqual(changed_fake.calls, [])
+            changed_summary = run_gamma_mcf(
+                changed, command_runner=changed_fake, progress_sink=lambda _: None
+            )
+            self.assertEqual(changed_summary.status, "complete")
+            self.assertTrue(changed_fake.calls)
 
-    def test_complete_output_skips_even_when_delegate_would_fail(self) -> None:
+    def test_failed_rerun_preserves_complete_output(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root)
@@ -228,13 +228,13 @@ class GammaMcfRunnerTests(unittest.TestCase):
                 if path.is_file()
             }
             fake = _FakeMcf(True)
-            summary = run_gamma_mcf(
-                plan,
-                command_runner=fake,
-                progress_sink=lambda _: None,
-            )
-            self.assertEqual(summary.status, "skipped")
-            self.assertEqual(fake.calls, [])
+            with self.assertRaisesRegex(RuntimeError, "forced mcf failure"):
+                run_gamma_mcf(
+                    plan,
+                    command_runner=fake,
+                    progress_sink=lambda _: None,
+                )
+            self.assertTrue(fake.calls)
             self.assertEqual({path: path.read_bytes() for path in existing}, existing)
 
     def test_missing_quicklook_fails_publication_and_preserves_logs(self) -> None:
@@ -256,7 +256,7 @@ class GammaMcfRunnerTests(unittest.TestCase):
             )
             self.assertEqual(len(failed), 1)
 
-    def test_missing_figure_directory_repairs_only_quicklooks(self) -> None:
+    def test_missing_figure_directory_triggers_full_recomputation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root)
@@ -276,10 +276,10 @@ class GammaMcfRunnerTests(unittest.TestCase):
             fake = _FakeMcf()
             summary = run_gamma_mcf(plan, command_runner=fake, progress_sink=lambda _: None)
 
-            self.assertEqual(summary.status, "figures_repaired")
-            self.assertEqual([call[0] for call in fake.calls], ["rasdt_pwr", "rasdt_pwr"])
+            self.assertEqual(summary.status, "complete")
+            self.assertIn("mcf", [call[0] for call in fake.calls])
 
-    def test_figure_repair_preserves_unrelated_visualization(self) -> None:
+    def test_recomputation_replaces_unrelated_visualization(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root)
@@ -289,16 +289,16 @@ class GammaMcfRunnerTests(unittest.TestCase):
             fake = _FakeMcf()
             self.assertEqual(
                 run_gamma_mcf(plan, command_runner=fake, progress_sink=lambda _: None).status,
-                "figures_repaired",
+                "complete",
             )
-            self.assertEqual([call[0] for call in fake.calls], ["rasdt_pwr"])
+            self.assertIn("mcf", [call[0] for call in fake.calls])
 
             unrelated = plan.case.visualization_dir / "notes.txt"
             unrelated.write_text("keep\n", encoding="utf-8")
             overwrite = _FakeMcf()
             run_gamma_mcf(plan, command_runner=overwrite, progress_sink=lambda _: None)
-            self.assertEqual(overwrite.calls, [])
-            self.assertTrue(unrelated.exists())
+            self.assertTrue(overwrite.calls)
+            self.assertFalse(unrelated.exists())
 
     def test_expected_quicklook_name_cannot_be_a_symlink(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -318,7 +318,7 @@ class GammaMcfRunnerTests(unittest.TestCase):
             self.assertFalse(target.is_symlink())
             self.assertEqual(outside.read_bytes(), b"external")
 
-    def test_complete_output_does_not_enter_publication(self) -> None:
+    def test_publication_failure_restores_complete_output(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = self._plan(root)
@@ -339,13 +339,12 @@ class GammaMcfRunnerTests(unittest.TestCase):
             with patch(
                 "geodesy_analysis.io.os.replace",
                 side_effect=fail_science_publication,
-            ):
-                summary = run_gamma_mcf(
+            ), self.assertRaisesRegex(OSError, "synthetic science publication failure"):
+                run_gamma_mcf(
                     plan,
                     command_runner=_FakeMcf(),
                     progress_sink=lambda _: None,
                 )
-            self.assertEqual(summary.status, "skipped")
 
             self.assertEqual({path: path.read_bytes() for path in existing}, existing)
 
@@ -367,8 +366,8 @@ class GammaMcfRunnerTests(unittest.TestCase):
             fake = _FakeMcf()
             summary = run_gamma_mcf(rebuilt, command_runner=fake, progress_sink=lambda _: None)
 
-            self.assertEqual(summary.status, "skipped")
-            self.assertEqual(fake.calls, [])
+            self.assertEqual(summary.status, "complete")
+            self.assertTrue(fake.calls)
 
     def _plan_from_config(self, root: Path):
         config = root / "config/analysis/gamma_mcf_unwrapping.cfg"

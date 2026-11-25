@@ -9,7 +9,7 @@
 
 Geodesy-Preprocessing 必须已经发布完整的 `registered_stack.json`。它应列出参考
 日期、传感器、极化和每个日期的 RSLC/参数文件。正式输入位置为
-`S1/ASCENDING_128/PRE/GAMMA/RSLC_SUBSET/registered_stack.json`。Analysis 不再
+`S1/ASCENDING_128/GAMMA/RSLC/SUBSET/registered_stack.json`。Analysis 不再
 扫描目录猜测输入。
 
 ## 2. 基线选择
@@ -29,11 +29,11 @@ Geodesy-Preprocessing 必须已经发布完整的 `registered_stack.json`。它�
 ```
 
 完成后检查网络表和 `baseline_manifest.json`；Analysis 不再生成 PNG。若需绘制
-或调整基线图，把 Geodesy-Visualization 的 `config_examples/visualization/baseline_plot.cfg`
+或调整基线图，把 Geodesy-Visualization 的 `config_examples/baseline_plot/baseline_plot.cfg`
 复制到项目 `config/visualization/`，然后在 `envPlot` 中运行：
 
 ```bash
-/home/yilun/miniconda3/envs/envPlot/bin/geodesy-visualization-insar-baseline \
+/home/yilun/miniconda3/envs/envPlot/bin/geodesy-visualization baseline_plot \
   --config /absolute/PROJECT/config/visualization/baseline_plot.cfg --case main
 ```
 
@@ -84,7 +84,7 @@ Geodesy-Visualization 仍负责 PyGMT 地图、论文图和其他二次渲染。
 
 指定 `--case` 时只验证并运行该 case；省略时按 CFG 顺序执行全部 case。同一方法的
 不同参数若需并存，由用户手动指定不同的 `output_dir`；程序不生成 `main`、`test`
-或编号 `run_id`。完整且签名一致时跳过；只缺快视图时只补图。三种方法
+或编号 `run_id`。每次正式调用都完整重算，成功后事务替换旧结果。三种方法
 统一发布 `pairs/<日期对>/pair.tflt.filt`、`pair.coh.filt`、`coh_ave.coh` 和
 `filtering_manifest.json`。
 滤波时实际使用的方法参数保存在同目录的 `provenance.json`；manifest 主要描述产品、
@@ -117,7 +117,7 @@ BM3D 还是 ADF 由 manifest lineage 记录，不叠加到目录层级。
 是 MCF 计算输入，只保留在 Analysis 科学目录。
 
 默认解缠 filtering manifest 中的全部干涉对。若只需选择其中一部分，在方法根目录
-创建 `pairs.txt`（例如 `S1/ASCENDING_128/GAMMA/pairs.txt`），文本文件每行写一个完整的
+创建 `pairs.txt`（例如 `S1/ASCENDING_128/GAMMA_mb/pairs.txt`），文本文件每行写一个完整的
 `YYYYMMDD-YYYYMMDD` pair 名；空行和 `#` 注释行会忽略。程序先完整校验 filtering
 manifest 及其与干涉 manifest 的来源、pair 集合和产品，再按列表挑选本次要解缠的 pair；
 未知或重复 pair 会报错。没有该文件时仍处理全部 pair。这个 case 级 `pairs.txt` 是
@@ -172,8 +172,8 @@ geodesy-analysis-gamma-mb --config /absolute/PROJECT/config/GAMMA_mb/gamma_sbas_
 日志统一位于 `<processing_root>/LOG/ANALYSIS/<STAGE>/`。失败日志目录会追加
 `failed-logs-N`，终端报错会给出位置。
 
-基线、干涉、滤波、解缠和去趋势命令遇到完整同签名结果时跳过，只缺快视图时仅补图；
-残缺或签名变化时拒绝覆盖并提示删除对应结果或另设输出目录。CFG 指定 `--case` 时仅
+基线、干涉、滤波、解缠、去趋势、大气和时序命令每次正式调用都会重新执行；
+成功后事务替换旧结果，失败时恢复旧结果。输入签名只作为 provenance 记录。CFG 指定 `--case` 时仅
 验证和运行该 case，不因其他 case 的配置错误而阻塞。解缠前需保证所选过滤清单与当前
 干涉清单的摘要和 pair 清单一致；若上游干涉结果已更新，应先重新运行对应滤波方法。
 

@@ -11,7 +11,6 @@ from pathlib import Path
 
 from geodesy_analysis.common.command import SubprocessCommandRunner
 from geodesy_analysis.common.progress import emit_progress
-from geodesy_analysis.common.reuse import ReuseState, classify_analysis_output
 from geodesy_analysis.insar.common.gamma_quicklooks import (
     coherence_quicklook_command,
     mli_quicklook_command,
@@ -19,8 +18,8 @@ from geodesy_analysis.insar.common.gamma_quicklooks import (
     wrapped_phase_quicklook_command,
 )
 from geodesy_analysis.io import (
-    atomic_output_directories,
     atomic_output_path,
+    atomic_replace_output_directories,
 )
 
 from .models import GammaInterferogramPlan, InterferogramPair
@@ -672,143 +671,11 @@ def run_gamma_interferograms(
         if plan.case.paths.processing_root is not None
         else plan.case.case_root / "LOG/ANALYSIS/INTERFEROGRAM_GENERATION/GAMMA"
     )
-    reuse = classify_analysis_output(
-        plan.case.output_dir,
-        "interferogram_manifest.json",
-        signature,
-        project_root=plan.case.project_root,
-    )
-    if reuse.science_reusable:
-        manifest = reuse.manifest or {}
-        lookup_name, geocoded_mli_name = geocoding_asset_names(plan)
-        expected_identity = {
-            "backend": {"name": "gamma"},
-            "baseline_manifest_project_path": _project_path(
-                plan, plan.case.baseline_manifest
-            ),
-            "case_id": plan.case.case_id,
-            "polarization": plan.case.polarization,
-            "lookup_table_project_path": _project_path(
-                plan,
-                plan.case.geocoding.output_dir / lookup_name,
-            ),
-            "geocoded_reference_mli_project_path": _project_path(
-                plan,
-                plan.case.geocoding.output_dir / geocoded_mli_name,
-            ),
-            "radar_height_project_path": _project_path(
-                plan,
-                plan.case.geocoding.output_dir
-                / f"{plan.stack.reference_date}.{plan.case.polarization}.wgs84.hgt",
-            ),
-            "registered_stack_project_path": _project_path(
-                plan, plan.case.registered_stack
-            ),
-            "stack_digest": plan.stack.source_digest,
-        }
-        inconsistent = [
-            key
-            for key, value in expected_identity.items()
-            if manifest.get(key) != value
-        ]
-        if [item.get("pair") for item in manifest.get("pairs", [])] != [
-            pair.name for pair in plan.pairs
-        ]:
-            inconsistent.append("pairs")
-        if inconsistent:
-            raise RuntimeError(
-                "interferogram manifest identity is inconsistent: "
-                + ", ".join(inconsistent)
-                + f". Existing science was not modified: {plan.case.output_dir}"
-            )
-        required_geometry = (
-            plan.case.geocoding.output_dir / str(manifest.get("reference_radar_height_name", "")),
-            plan.case.geocoding.output_dir / "demcrop.dem",
-            plan.case.geocoding.output_dir / "demcrop.dem_par",
-        )
-        missing_geometry = [
-            path for path in required_geometry if not path.is_file() or path.stat().st_size < 1
-        ]
-        if missing_geometry:
-            raise RuntimeError(
-                "science manifest is complete but required GEOCODING products are missing: "
-                + ", ".join(str(path) for path in missing_geometry)
-                + f". Delete {plan.case.output_dir} and {plan.case.geocoding.output_dir} "
-                "after inspection before rerunning"
-            )
-        if reuse.state is ReuseState.FIGURES_MISSING:
-            _begin_logs(log_dir)
-            mli_assets = {
-                date: (
-                    plan.case.output_dir / "MLI" / f"{date}.mli",
-                    plan.case.output_dir / "MLI" / f"{date}.mli.par",
-                )
-                for date in plan.stack.dates
-            }
-            width = gamma_parameter(mli_assets[plan.stack.reference_date][1], "range_samples")
-            pair_products = [
-                (
-                    pair,
-                    {
-                        "differential_interferogram": (
-                            plan.case.output_dir / "PAIRS" / pair.name / "pair.tflt"
-                        ),
-                        "coherence": (
-                            plan.case.output_dir / "PAIRS" / pair.name / "pair.cc"
-                        ),
-                    },
-                )
-                for pair in plan.pairs
-            ]
-            _render_quicklooks(
-                plan,
-                mli_assets=mli_assets,
-                average_mli=plan.case.output_dir / "MLI/ave_mli",
-                pair_products=pair_products,
-                width=width,
-                destination=plan.case.visualization_dir,
-                delegate=delegate,
-                log_dir=log_dir,
-                atomic_files=True,
-            )
-            status = "figures_repaired"
-        else:
-            status = "skipped"
-        _event(
-            progress_sink,
-            event="batch_finished",
-            status=status,
-            total=len(plan.stack.assets) + len(plan.pairs) + 3,
-            stage="reuse",
-        )
-        return InterferogramRunSummary(
-            status=status,
-            acquisition_count=len(plan.stack.assets),
-            pair_count=len(plan.pairs),
-            output_dir=plan.case.output_dir,
-            warnings=(),
-        )
-    if reuse.state is not ReuseState.ABSENT:
-        raise RuntimeError(reuse.guidance)
-    existing_companions = [
-        path
-        for path in (
-            plan.case.geocoding.output_dir,
-            plan.case.visualization_dir,
-        )
-        if path.exists() or path.is_symlink()
-    ]
-    if existing_companions:
-        raise RuntimeError(
-            "interferogram science is absent but companion outputs already exist: "
-            + ", ".join(str(path) for path in existing_companions)
-            + ". Inspect and delete the incomplete output group before rerunning"
-        )
     _begin_logs(log_dir)
     total = len(plan.stack.assets) + len(plan.pairs) + 3
     _event(progress_sink, event="batch_started", status="start", total=total, stage="prepare")
     try:
-        with atomic_output_directories(
+        with atomic_replace_output_directories(
             plan.case.geocoding.output_dir,
             plan.case.visualization_dir,
             plan.case.output_dir,

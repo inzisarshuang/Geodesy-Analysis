@@ -13,12 +13,11 @@ import numpy as np
 
 from geodesy_analysis.common.command import SubprocessCommandRunner
 from geodesy_analysis.common.progress import emit_progress
-from geodesy_analysis.common.reuse import ReuseState, classify_analysis_output
 from geodesy_analysis.insar.common.gamma_quicklooks import (
     atmosphere_phase_quicklook_command,
     require_nonempty_quicklook,
 )
-from geodesy_analysis.io import atomic_output_directories
+from geodesy_analysis.io import atomic_replace_output_directories
 
 from .models import GammaAtmospherePair, GammaAtmospherePlan
 from .publication import gamma_atmosphere_input_signature
@@ -552,61 +551,11 @@ def run_gamma_atmosphere(
     sink = progress_sink or print
     delegate = command_runner or SubprocessCommandRunner()
     signature = gamma_atmosphere_input_signature(plan)
-    reuse = classify_analysis_output(
-        plan.case.output_dir,
-        "atmosphere_manifest.json",
-        signature,
-        project_root=plan.case.project_root,
-    )
-    if reuse.science_reusable:
-        manifest = reuse.manifest or {}
-        identity = {
-            "case_id": plan.case.case_id,
-            "detrending_manifest_digest": plan.detrending_manifest_digest,
-            "method": plan.case.method,
-            "pair_count": len(plan.pairs),
-        }
-        if any(manifest.get(key) != value for key, value in identity.items()) or [
-            item.get("pair")
-            for item in manifest.get("pairs", [])
-            if isinstance(item, dict)
-        ] != [pair.name for pair in plan.pairs]:
-            raise RuntimeError(
-                "atmosphere manifest identity is inconsistent; existing science "
-                f"was not modified: {plan.case.output_dir}"
-            )
-        if reuse.state is ReuseState.FIGURES_MISSING:
-            _begin_logs(plan.case.log_dir)
-            _repair_quicklooks(
-                plan,
-                manifest=manifest,
-                delegate=delegate,
-                log_dir=plan.case.log_dir,
-            )
-            status = "figures_repaired"
-        else:
-            status = "skipped"
-        _event(
-            sink,
-            event="batch_finished",
-            status=status,
-            stage="reuse",
-            total=len(plan.pairs),
-        )
-        return GammaAtmosphereRunSummary(status, len(plan.pairs), plan.case.output_dir)
-    if reuse.state is not ReuseState.ABSENT:
-        raise RuntimeError(reuse.guidance)
-    if plan.case.figure_dir.exists() or plan.case.figure_dir.is_symlink():
-        raise RuntimeError(
-            "atmosphere science is absent but figure output already exists; inspect "
-            "and delete the incomplete output group"
-        )
-
     _begin_logs(plan.case.log_dir)
     total = len(plan.pairs)
     _event(sink, event="batch_started", status="start", stage="prepare", total=total)
     try:
-        with atomic_output_directories(
+        with atomic_replace_output_directories(
             plan.case.figure_dir, plan.case.output_dir
         ) as (figure_staging, staging):
             pairs_dir = staging / "PAIRS"

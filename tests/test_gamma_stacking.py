@@ -199,15 +199,19 @@ reference_height = 2
             fake = _FakeGamma()
             self.assertEqual(
                 run_gamma_stacking(plan, command_runner=fake, progress_sink=lambda _: None).status,
-                "skipped",
+                "complete",
             )
-            self.assertEqual(fake.calls, [])
-            with self.assertRaisesRegex(RuntimeError, "signature changed"):
+            self.assertTrue(fake.calls)
+            changed = _FakeGamma()
+            self.assertEqual(
                 run_gamma_stacking(
                     replace(plan, case=replace(plan.case, display_max=0.1)),
-                    command_runner=_FakeGamma(),
+                    command_runner=changed,
                     progress_sink=lambda _: None,
-                )
+                ).status,
+                "complete",
+            )
+            self.assertTrue(changed.calls)
             science = plan.case.output_dir / "mean_los_velocity"
             original = science.read_bytes()
             missing = plan.case.figure_dir / "mean_los_velocity.radar.bmp"
@@ -216,8 +220,8 @@ reference_height = 2
             result = run_gamma_stacking(
                 plan, command_runner=repair, progress_sink=lambda _: None
             )
-            self.assertEqual(result.status, "figures_repaired")
-            self.assertEqual([call[0] for call in repair.calls], ["rasdt_pwr"])
+            self.assertEqual(result.status, "complete")
+            self.assertIn("stacking", [call[0] for call in repair.calls])
             self.assertEqual(science.read_bytes(), original)
 
 

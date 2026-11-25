@@ -146,7 +146,7 @@ Assert the legacy order `<filtered-int> <filtered-coh> <mask> <unwrapped> <width
 
 - [ ] **Step 2: Write publication and recovery tests**
 
-Use a fake command runner to assert per-pair logs, product validation, normalized `pairs/<pair>/pair.tflt.filt.unw`, mask/reference provenance, schema-v1 manifest, progress, atomic failure behavior, matching-output skip, and differing-input conflict.
+Use a fake command runner to assert per-pair logs, product validation, normalized `pairs/<pair>/pair.tflt.filt.unw`, mask/reference provenance, schema-v1 manifest, progress, default recomputation, atomic overwrite, and rollback that preserves previous outputs on failure.
 
 - [ ] **Step 3: Run runner tests and verify they fail**
 

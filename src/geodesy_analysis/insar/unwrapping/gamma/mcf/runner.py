@@ -12,12 +12,11 @@ import numpy as np
 
 from geodesy_analysis.common.command import SubprocessCommandRunner
 from geodesy_analysis.common.progress import emit_progress
-from geodesy_analysis.common.reuse import ReuseState, classify_analysis_output
 from geodesy_analysis.insar.common.gamma_quicklooks import (
     require_nonempty_quicklook,
     unwrapped_phase_quicklook_command,
 )
-from geodesy_analysis.io import atomic_output_directories
+from geodesy_analysis.io import atomic_replace_output_directories
 
 from .mask import ReferencePoint, build_unwrapping_mask, resolve_reference_point
 from .models import GammaMcfPlan, UnwrappingPair
@@ -156,49 +155,11 @@ def run_gamma_mcf(
         if plan.case.paths.processing_root is not None
         else plan.case.case_root / "LOG/ANALYSIS/UNWRAPPING/GAMMA_MCF"
     )
-    reuse = classify_analysis_output(
-        plan.case.output_dir, "unwrapping_manifest.json", signature
-    )
-    if reuse.science_reusable:
-        manifest = reuse.manifest or {}
-        expected_identity = {
-            "case_id": plan.case.case_id,
-            "filtering_manifest_digest": plan.filtering.source_digest,
-            "method": "gamma_mcf",
-            "pair_count": len(plan.pairs),
-        }
-        if any(manifest.get(key) != value for key, value in expected_identity.items()):
-            raise RuntimeError(
-                f"unwrapping manifest identity is inconsistent; existing science was not modified: {plan.case.output_dir}"
-            )
-        if reuse.state is ReuseState.FIGURES_MISSING:
-            _begin_logs(log_dir)
-            plan.case.visualization_dir.mkdir(parents=True, exist_ok=True)
-            for pair in plan.pairs:
-                _run_quicklook(
-                    plan,
-                    pair,
-                    plan.case.output_dir / "pairs" / pair.name / "pair.tflt.filt.unw",
-                    destination=plan.case.visualization_dir,
-                    delegate=delegate,
-                    log_dir=log_dir,
-                )
-            status = "figures_repaired"
-        else:
-            status = "skipped"
-        _event(sink, event="batch_finished", status=status, stage="reuse", total=len(plan.pairs) + 1)
-        return GammaMcfRunSummary(status, len(plan.pairs), plan.case.output_dir)
-    if reuse.state is not ReuseState.ABSENT:
-        raise RuntimeError(reuse.guidance)
-    if plan.case.visualization_dir.exists() or plan.case.visualization_dir.is_symlink():
-        raise RuntimeError(
-            "unwrapping science is absent but figure output already exists; inspect and delete the incomplete output group"
-        )
     _begin_logs(log_dir)
     total = len(plan.pairs) + 1
     _event(sink, event="batch_started", status="start", stage="prepare", total=total)
     try:
-        with atomic_output_directories(
+        with atomic_replace_output_directories(
             plan.case.visualization_dir, plan.case.output_dir
         ) as (visual_staging, staging):
             mask = build_unwrapping_mask(plan, staging)
