@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -208,6 +209,61 @@ class ConfigExampleTests(unittest.TestCase):
         for name in ("gamma_dinsar.cfg", "gamma_stacking.cfg", "gamma_sbas_mb.cfg"):
             text = (self.config_root / name).read_text(encoding="utf-8")
             self.assertNotIn("GEOCODING/lookup_table", text)
+
+    def test_atmosphere_example_documents_every_supported_method(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._inputs(root)
+            config = self._write_example(root, "gamma_atmosphere.cfg")
+            template = config.read_text(encoding="utf-8")
+            description = re.search(r"((?:^#.*\n)+)^method =", template, re.MULTILINE)
+            self.assertIsNotNone(description)
+            methods = set(re.findall(r"\b(?:none|gamma_[a-z0-9_]+)\b", description[1]))
+            self.assertEqual(
+                methods,
+                {"none", "gamma_atm_mod_2d_auto", "gamma_atm_mod_2d_polygon", "gamma_fspf_atm_mod_2d"},
+            )
+            polygon = root / "config/GAMMA_mb/deformation.poly"
+            polygon.write_text("0 0\n1 0\n1 1\n", encoding="utf-8")
+            for method in sorted(methods):
+                with self.subTest(method=method):
+                    setting = f"method = {method}"
+                    if method == "gamma_atm_mod_2d_polygon":
+                        setting += f"\npolygon_file = {polygon}"
+                    config.write_text(
+                        template.replace("method = gamma_atm_mod_2d_auto", setting),
+                        encoding="utf-8",
+                    )
+                    (case,) = load_gamma_atmosphere_config(config)
+                    self.assertEqual(case.method, method)
+
+            config.write_text(
+                template.replace("method = gamma_atm_mod_2d_auto", "method = gamma_fspf"),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "unsupported atmosphere method"):
+                load_gamma_atmosphere_config(config)
+
+    def test_geocoding_example_accepts_supported_polynomial_sizes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._inputs(root)
+            interferogram = self._write_example(root, "gamma_interferogram.cfg")
+            geocoding = self._write_geocoding_example(root)
+            template = geocoding.read_text(encoding="utf-8")
+
+            for size in (1, 3, 4, 6, 2):
+                with self.subTest(size=size):
+                    geocoding.write_text(
+                        template.replace("polynomial_parameters = 1", f"polynomial_parameters = {size}"),
+                        encoding="utf-8",
+                    )
+                    if size == 2:
+                        with self.assertRaisesRegex(ValueError, "polynomial_parameters must be"):
+                            load_gamma_interferogram_config(interferogram)
+                    else:
+                        (case,) = load_gamma_interferogram_config(interferogram)
+                        self.assertEqual(case.geocoding.polynomial_parameters, size)
 
     def test_all_packaged_configs_publish_the_path_contract(self) -> None:
         expected = {

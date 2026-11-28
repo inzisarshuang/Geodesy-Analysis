@@ -96,6 +96,14 @@ Geodesy-Analysis/
 
 ## 5. Quick Start / 快速开始
 
+Use `--config` for the configuration, `--case` to select a named section, and
+`--dry-run` to validate inputs and show the plan. Where supported, defaults for
+`output_dir`, `figure_dir`, and `log_dir` derive from `processing_root`.
+
+公开命令使用 `--config` 指定配置文件，`--case` 选择配置段，`--dry-run`
+校验输入并显示计划。输出目录按用途使用 `output_dir`、`figure_dir` 和各步骤
+支持的 `log_dir`，默认路径可由 `processing_root` 推导。
+
 从仓库 `config/GAMMA_mb/` 复制或直接参考所需 CFG，使用 `--dry-run` 检查，再正式
 生成基线。随后修改 `gamma_interferogram.cfg`，用同样方式检查和
 运行干涉阶段。如需基线图，使用 Geodesy-Visualization 的

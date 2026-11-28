@@ -104,6 +104,16 @@ class GammaMcfConfigTests(unittest.TestCase):
             self.assertEqual(case.mask_operation, "or")
             self.assertEqual(case.output_dir, root / "custom/unwrapped")
 
+    def test_accepts_xor_external_mask(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, external = self._files(root)
+            config = self._write(
+                root, self._body(root, f"external_mask = {external}\nmask_operation = XOR")
+            )
+            (case,) = load_gamma_mcf_config(config)
+            self.assertEqual(case.mask_operation, "xor")
+
     def test_discovers_case_root_pair_list_and_protects_it_from_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -141,6 +151,7 @@ class GammaMcfConfigTests(unittest.TestCase):
             ("mcf_mode = 0", "mcf_mode = 4", "0 through 3"),
             ("mcf_mode = 0", "mcf_mode = 0\nreference_mode = manual", "reference_range.*reference_azimuth"),
             ("mcf_mode = 0", "mcf_mode = 0\nreference_mode = other", "auto or manual"),
+            ("mcf_mode = 0", "mcf_mode = 0\nmask_operation = not", "mask_operation must be"),
             ("mcf_mode = 0", "mcf_mode = 0\ncoherence_threshold = 2", "between 0 and 1"),
             ("mcf_mode = 0", "mcf_mode = 0\nunknown = yes", "unknown key"),
         )
